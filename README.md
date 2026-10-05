@@ -131,6 +131,101 @@ Put your real `NCBI_API_KEY` / email only in your GLOBAL config, never in a file
     python tests/test_server.py                             # offline tests (synthetic fixture, no network)
     python tests/test_access.py                             # offline open-access tests
 
+## Host on Google Cloud Run (remote MCP)
+
+Cloud Run's free tier covers up to **2 million requests/month** with scale-to-zero (no cost when idle).
+
+### Prerequisites
+1. Install [Google Cloud SDK](https://cloud.google.com/sdk/docs/install)
+2. Authenticate: `gcloud auth login`
+3. Create or select a project: `gcloud config set project YOUR_PROJECT_ID`
+4. Enable billing (free tier covers most usage)
+
+### One-command deploy
+```bash
+# Set your NCBI credentials as env vars first
+export NCBI_EMAIL="you@example.com"
+export UNPAYWALL_EMAIL="you@example.com"
+export NCBI_API_KEY="your-key"       # optional, raises rate limit
+
+# Deploy (defaults to us-central1)
+chmod +x deploy.sh
+./deploy.sh
+
+# Or specify project and region explicitly
+./deploy.sh my-gcp-project us-east1
+```
+
+The script will:
+1. Enable Cloud Run & Artifact Registry APIs
+2. Build the container image via Cloud Build
+3. Deploy with scale 0→3, 512 MB RAM, 300 s timeout
+4. Print the service URL and ready-to-paste MCP configs
+
+### Manual deploy (step by step)
+```bash
+PROJECT_ID="your-project-id"
+REGION="us-central1"
+
+# Build
+gcloud builds submit --tag gcr.io/$PROJECT_ID/pubmed-mcp
+
+# Deploy
+gcloud run deploy pubmed-mcp \
+  --image gcr.io/$PROJECT_ID/pubmed-mcp \
+  --region $REGION \
+  --allow-unauthenticated \
+  --port 8080 \
+  --memory 512Mi \
+  --min-instances 0 --max-instances 3 \
+  --set-env-vars "MCP_TRANSPORT=streamable-http,NCBI_EMAIL=you@example.com"
+```
+
+### Connect MCP clients to the remote server
+
+After deployment, your MCP endpoint will be:
+```
+https://pubmed-mcp-HASH-REGION.a.run.app/mcp
+```
+
+#### Claude Desktop / Cursor / Antigravity
+```json
+{"mcpServers": {"pubmed-scraper": {
+  "url": "https://pubmed-mcp-HASH-REGION.a.run.app/mcp"
+}}}
+```
+
+#### OpenCode
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "pubmed-scraper": {
+      "type": "remote",
+      "url": "https://pubmed-mcp-HASH-REGION.a.run.app/mcp"
+    }
+  }
+}
+```
+
+#### Test the live endpoint
+```bash
+curl -X POST https://pubmed-mcp-HASH-REGION.a.run.app/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl","version":"1.0"}}}'
+```
+
+### Environment variables for Cloud Run
+
+| Variable | Required | Description |
+|---|---|---|
+| `MCP_TRANSPORT` | Set by Dockerfile | `streamable-http` (do not change) |
+| `PORT` | Set by Cloud Run | Container port (do not change) |
+| `NCBI_EMAIL` | Recommended | NCBI usage policy asks for one |
+| `NCBI_API_KEY` | Optional | Free key, raises rate limit 3→10 req/s |
+| `UNPAYWALL_EMAIL` | Optional | Enables open-access detection via Unpaywall |
+
 ## Limitations
 - Abstract-level data only; no full text. Not a substitute for a full systematic-review search strategy across Embase, Cochrane, etc.
 - Search quality depends on your query syntax (MeSH, field tags); PubMed may translate it unexpectedly, so check `query_translation`.

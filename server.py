@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""PubMed MCP server — NCBI E-utilities (esearch + efetch) over stdio.
+"""PubMed MCP server — NCBI E-utilities (esearch + efetch).
+
+Supports two transports:
+  - stdio  (default)  — for local MCP clients (Claude Desktop, Cursor, Antigravity, OpenCode).
+  - streamable-http   — for remote hosting (Google Cloud Run, etc.).
+
+Select transport via env:
+  MCP_TRANSPORT=streamable-http  (default: stdio)
+  PORT=8080                      (Cloud Run sets this; default: 8080)
 
 Design guarantees
 -----------------
@@ -7,7 +15,7 @@ Design guarantees
 * A field PubMed does not provide is returned as the literal string MISSING
   ("Data not provided in PubMed abstract").
 * PMIDs that were requested but not returned by NCBI are listed in `not_found`, never fabricated.
-* stdout is reserved for the MCP protocol; all logging goes to stderr.
+* stdout is reserved for the MCP protocol (stdio mode); all logging goes to stderr.
 
 Env (all optional): NCBI_API_KEY, NCBI_EMAIL, NCBI_TOOL
 """
@@ -745,7 +753,19 @@ def pubmed_batch_fetch(
 
 
 def main():
-    mcp.run()  # stdio transport
+    transport = os.environ.get("MCP_TRANSPORT", "stdio").strip().lower()
+    if transport == "streamable-http":
+        port = int(os.environ.get("PORT", "8080"))
+        log.info("Starting streamable-http transport on 0.0.0.0:%d", port)
+        mcp.run(
+            transport="streamable-http",
+            host="0.0.0.0",
+            port=port,
+            streamable_http_path="/mcp",
+            stateless_http=True,  # Cloud Run may route to any instance
+        )
+    else:
+        mcp.run()  # stdio transport
 
 
 if __name__ == "__main__":
