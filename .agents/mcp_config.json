@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "pubmed-scraper": {
-      "command": "c:\\Users\\Ahsan543\\Desktop\\antigravity_projects_all\\.venv\\Scripts\\python.exe",
-      "args": ["c:\\Users\\Ahsan543\\Desktop\\antigravity_projects_all\\server.py"],
+      "command": "pubmed-mcp",
+      "args": [],
       "env": {
         "NCBI_EMAIL": "YOUR_EMAIL_FOR_NCBI_POLICY",
         "UNPAYWALL_EMAIL": "YOUR_EMAIL_FOR_UNPAYWALL"

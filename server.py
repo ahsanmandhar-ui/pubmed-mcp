@@ -288,5 +288,9 @@ def download_pdfs(pmids: List[str], folder: Optional[str] = None) -> dict:
     return {"folder": str(dest), "counts": counts, "results": rows, "not_found": data["not_found"]}
 
 
-if __name__ == "__main__":
+def main():
     mcp.run()  # stdio transport
+
+
+if __name__ == "__main__":
+    main()

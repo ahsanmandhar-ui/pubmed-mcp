@@ -6,4 +6,7 @@ venv/
 .pytest_cache/
 .DS_Store
 tsconfig.json
+dist/
+build/
+*.egg-info/
 # never commit real keys: keep NCBI_API_KEY in your GLOBAL Antigravity config (~/.gemini/config/mcp_config.json) or a shell env var
