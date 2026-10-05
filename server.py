@@ -22,6 +22,7 @@ import xml.etree.ElementTree as ET
 from typing import List, Optional
 
 import requests
+import access
 try:  # mcp 1.x
     from mcp.server.fastmcp import FastMCP
 except ModuleNotFoundError:  # mcp 2.x renamed FastMCP -> MCPServer
@@ -139,10 +140,12 @@ def parse_article(node: ET.Element) -> dict:
     if cit is None or art is None:
         return {}
     pmid = (cit.findtext("PMID") or "").strip()
-    doi = MISSING
+    doi, pmcid = MISSING, MISSING
     for aid in node.findall("PubmedData/ArticleIdList/ArticleId"):
         if aid.get("IdType") == "doi" and (aid.text or "").strip():
             doi = aid.text.strip()
+        elif aid.get("IdType") == "pmc" and (aid.text or "").strip():
+            pmcid = aid.text.strip()
     ptypes = [t.text.strip() for t in art.findall("PublicationTypeList/PublicationType") if t.text and t.text.strip()]
     retraction = any(c.get("RefType") == "RetractionIn" for c in cit.findall("CommentsCorrectionsList/CommentsCorrections"))
     return {
@@ -152,6 +155,7 @@ def parse_article(node: ET.Element) -> dict:
         "journal": _text(art.find("Journal/Title")),
         "pub_date": _pub_date(art),
         "doi": doi,
+        "pmcid": pmcid,
         "publication_types": ptypes or MISSING,
         "has_retraction_notice": retraction,  # True only if NCBI lists a 'RetractionIn' link for this record
         "abstract": _abstract(art),
@@ -228,6 +232,60 @@ def fetch_abstracts(pmids: List[str]) -> dict:
         raise ValueError(f"max {MAX_FETCH} PMIDs per call (got {len(ids)}); split the request")
     r = _request("efetch.fcgi", {"db": "pubmed", "id": ",".join(ids), "retmode": "xml", "rettype": "abstract"}, method="POST")
     return parse_efetch(r.text, ids)
+
+
+@mcp.tool()
+def check_access(pmids: List[str]) -> dict:
+    """Classify each PMID as open-access PDF, open-access landing page only, no open access found (likely paywalled), or unchecked.
+
+    Uses DOI -> Unpaywall and PMCID -> PubMed Central. 'no_open_access_found' means no legal free copy is indexed;
+    it does not prove the paper cannot be reached through an institution. Max 100 PMIDs per call.
+    Needs UNPAYWALL_EMAIL (or NCBI_EMAIL) for the Unpaywall lookup; without it only PubMed Central links are found.
+    """
+    ids = [str(p).strip() for p in (pmids or [])]
+    if len(set(ids)) > 100:
+        raise ValueError("max 100 PMIDs per call; split the request")
+    data = fetch_abstracts(ids)
+    email = access.unpaywall_email()
+    out = access.summarize(access.check_records(data["records"], email))
+    out.update({"requested": data["requested"], "not_found": data["not_found"], "unpaywall_email_configured": bool(email)})
+    return out
+
+
+@mcp.tool()
+def search_with_access(query: str, max_results: int = 20, sort: str = "relevance",
+                       date_from: Optional[int] = None, date_to: Optional[int] = None) -> dict:
+    """Run a PubMed search, then report for every hit whether a legal open-access PDF exists or the paper looks paywalled.
+
+    max_results is capped at 100 here. Returns query_translation and total_matches (as search_pubmed) plus
+    counts and four lists: open_access_pdf, open_access_landing_page_only, no_open_access_found, unchecked.
+    """
+    s = search_pubmed(query, min(int(max_results), 100), sort, date_from, date_to)
+    head = {"query_submitted": s["query_submitted"], "query_translation": s["query_translation"],
+            "total_matches": s["total_matches"], "returned": s["returned"], "warnings": s["warnings"]}
+    if not s["pmids"]:
+        return {**head, **access.summarize([])}
+    return {**head, **check_access(s["pmids"])}
+
+
+@mcp.tool()
+def download_pdfs(pmids: List[str], folder: Optional[str] = None) -> dict:
+    """Download open-access PDFs for the given PMIDs (max 50) as PMID<id>.pdf. Paywalled papers are skipped, never bypassed.
+
+    folder: absolute path, or a sub-folder name under PUBMED_PDF_DIR (default ~/pubmed_pdfs). Every file is verified
+    to be a real PDF (starts with %PDF); HTML login/bot-check pages are rejected and reported as failed.
+    """
+    ids = [str(p).strip() for p in (pmids or [])]
+    if len(set(ids)) > 50:
+        raise ValueError("max 50 PMIDs per call; split the request")
+    data = fetch_abstracts(ids)
+    results = access.check_records(data["records"], access.unpaywall_email())
+    dest = access.target_dir(folder)
+    rows = access.download_many(results, dest)
+    counts = {}
+    for r in rows:
+        counts[r["status"]] = counts.get(r["status"], 0) + 1
+    return {"folder": str(dest), "counts": counts, "results": rows, "not_found": data["not_found"]}
 
 
 if __name__ == "__main__":
