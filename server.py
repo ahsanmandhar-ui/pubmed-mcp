@@ -12,6 +12,7 @@ Design guarantees
 Env (all optional): NCBI_API_KEY, NCBI_EMAIL, NCBI_TOOL
 """
 import datetime
+import json
 import logging
 import os
 import re
@@ -130,6 +131,76 @@ def parse_article(node: ET.Element) -> dict:
         "publication_types": ptypes or MISSING,
         "has_retraction_notice": retraction,  # True only if NCBI lists a 'RetractionIn' link for this record
         "abstract": _abstract(art),
+        "url": f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
+    }
+
+
+def normalize_article(node: ET.Element) -> dict:
+    """Normalize a PubmedArticle XML node into a strict schema with structured missingness indicators."""
+    cit = node.find("MedlineCitation")
+    art = cit.find("Article") if cit is not None else None
+    if cit is None or art is None:
+        return {}
+    pmid = (cit.findtext("PMID") or "").strip()
+
+    title_val = _text(art.find("ArticleTitle"))
+    title = {"value": title_val, "status": "available"} if title_val != MISSING else {"value": None, "status": "missing"}
+
+    authors_val = _authors(art)
+    authors = {"value": authors_val, "status": "available"} if authors_val != MISSING else {"value": [], "status": "missing"}
+
+    journal_val = _text(art.find("Journal/Title"))
+    journal = {"value": journal_val, "status": "available"} if journal_val != MISSING else {"value": None, "status": "missing"}
+
+    pub_date_val = _pub_date(art)
+    pub_date = {"value": pub_date_val, "status": "available"} if pub_date_val != MISSING else {"value": None, "status": "missing"}
+
+    doi_val, pmcid_val = None, None
+    for aid in node.findall("PubmedData/ArticleIdList/ArticleId"):
+        if aid.get("IdType") == "doi" and (aid.text or "").strip():
+            doi_val = aid.text.strip()
+        elif aid.get("IdType") == "pmc" and (aid.text or "").strip():
+            pmcid_val = aid.text.strip()
+
+    doi = {"value": doi_val, "status": "available"} if doi_val else {"value": None, "status": "not_returned_by_ncbi"}
+    pmcid = {"value": pmcid_val, "status": "available"} if pmcid_val else {"value": None, "status": "not_returned_by_ncbi"}
+
+    ptypes = [t.text.strip() for t in art.findall("PublicationTypeList/PublicationType") if t.text and t.text.strip()]
+    publication_types = {"value": ptypes, "status": "available"} if ptypes else {"value": [], "status": "not_returned_by_ncbi"}
+
+    abstract_val = _abstract(art)
+    abstract = {"value": abstract_val, "status": "available"} if abstract_val != MISSING else {"value": None, "status": "missing"}
+
+    comments_corrections = []
+    has_retraction = False
+    has_erratum = False
+    for cc in cit.findall("CommentsCorrectionsList/CommentsCorrections"):
+        ref_type = cc.get("RefType", "").strip() or "Unknown"
+        cc_pmid = (cc.findtext("PMID") or "").strip() or None
+        note = (cc.findtext("Note") or "").strip() or None
+        if ref_type == "RetractionIn":
+            has_retraction = True
+        elif ref_type in ("ErratumIn", "ErratumFor"):
+            has_erratum = True
+        comments_corrections.append({
+            "ref_type": ref_type,
+            "pmid": cc_pmid,
+            "note": note,
+        })
+
+    return {
+        "pmid": pmid,
+        "title": title,
+        "authors": authors,
+        "journal": journal,
+        "pub_date": pub_date,
+        "doi": doi,
+        "pmcid": pmcid,
+        "publication_types": publication_types,
+        "abstract": abstract,
+        "has_retraction_notice": has_retraction,
+        "has_erratum_notice": has_erratum,
+        "comments_corrections": comments_corrections,
         "url": f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
     }
 
@@ -365,6 +436,70 @@ def pubmed_fetch(pmids: List[str]) -> dict:
         "records": records_with_status,
         "not_found": base["not_found"],
         "results_summary": records_with_status + not_found_with_status,
+        "provenance": prov,
+    }
+
+
+@mcp.tool()
+def pubmed_get(pmid: str, mode: str = "normalized") -> dict:
+    """Retrieve a single PubMed record by PMID in normalized mode or raw verbatim XML.
+
+    Args:
+      pmid: PubMed identifier (1-9 digits).
+      mode: 'normalized' (default) returns deterministic schema with structured missingness indicators;
+            'raw' returns verbatim XML with SHA-256 integrity hash for auditing.
+    """
+    clean_pmid = str(pmid or "").strip()
+    if not PMID_RE.match(clean_pmid):
+        raise ValueError(f"invalid PMID {pmid!r}: PMIDs are 1-9 digits")
+
+    clean_mode = str(mode or "normalized").strip().lower()
+    if clean_mode not in ("normalized", "raw"):
+        raise ValueError("mode must be 'normalized' or 'raw'")
+
+    r = _request("efetch.fcgi", {"db": "pubmed", "id": clean_pmid, "retmode": "xml", "rettype": "abstract"}, method="POST")
+    prov = client.build_provenance("efetch", {"id": clean_pmid, "mode": clean_mode})
+
+    try:
+        root = ET.fromstring(r.text)
+    except Exception as e:
+        raise RuntimeError(f"Failed to parse NCBI XML response: {e}")
+
+    target_node = None
+    for art_node in root.findall("PubmedArticle"):
+        cit = art_node.find("MedlineCitation")
+        if cit is not None and (cit.findtext("PMID") or "").strip() == clean_pmid:
+            target_node = art_node
+            break
+
+    if target_node is None:
+        return {
+            "pmid": clean_pmid,
+            "mode": clean_mode,
+            "status": "not_found",
+            "record": None,
+            "provenance": prov,
+        }
+
+    if clean_mode == "raw":
+        raw_xml = ET.tostring(target_node, encoding="unicode")
+        return {
+            "pmid": clean_pmid,
+            "mode": "raw",
+            "status": "found",
+            "raw_xml": raw_xml,
+            "integrity": ncbi_client.NcbiClient.compute_hash(raw_xml),
+            "provenance": prov,
+        }
+
+    rec = normalize_article(target_node)
+    rec_json = json.dumps(rec, sort_keys=True)
+    return {
+        "pmid": clean_pmid,
+        "mode": "normalized",
+        "status": "found",
+        "record": rec,
+        "integrity": ncbi_client.NcbiClient.compute_hash(rec_json),
         "provenance": prov,
     }
 

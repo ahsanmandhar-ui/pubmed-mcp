@@ -137,5 +137,122 @@ class TestTargetTools(unittest.TestCase):
             self.assertEqual(res["provenance"]["utility"], "efetch")
 
 
+class TestPubmedGet(unittest.TestCase):
+    STANDARD_XML = (
+        '<?xml version="1.0"?><PubmedArticleSet>'
+        '<PubmedArticle><MedlineCitation><PMID>2001</PMID><Article>'
+        '<Journal><JournalIssue><PubDate><Year>2024</Year><Month>Aug</Month></PubDate></JournalIssue><Title>Cardio Journal</Title></Journal>'
+        '<ArticleTitle>Cardiomyopathy trial results</ArticleTitle>'
+        '<Abstract><AbstractText Label="AIM">Evaluate therapy.</AbstractText><AbstractText Label="CONCLUSION">Therapy effective.</AbstractText></Abstract>'
+        '<AuthorList><Author><LastName>Smith</LastName><ForeName>Alice</ForeName></Author></AuthorList>'
+        '<PublicationTypeList><PublicationType>Randomized Controlled Trial</PublicationType></PublicationTypeList>'
+        '</Article></MedlineCitation>'
+        '<PubmedData><ArticleIdList><ArticleId IdType="doi">10.1016/cardio.2024.01</ArticleId><ArticleId IdType="pmc">PMC8888</ArticleId></ArticleIdList></PubmedData>'
+        '</PubmedArticle>'
+        '</PubmedArticleSet>'
+    )
+
+    MISSING_FIELDS_XML = (
+        '<?xml version="1.0"?><PubmedArticleSet>'
+        '<PubmedArticle><MedlineCitation><PMID>2002</PMID><Article>'
+        '<ArticleTitle>Brief note without abstract</ArticleTitle>'
+        '</Article></MedlineCitation><PubmedData/></PubmedArticle>'
+        '</PubmedArticleSet>'
+    )
+
+    ERRATA_RETRACTION_XML = (
+        '<?xml version="1.0"?><PubmedArticleSet>'
+        '<PubmedArticle><MedlineCitation><PMID>2003</PMID><Article>'
+        '<ArticleTitle>Study under revision</ArticleTitle>'
+        '</Article>'
+        '<CommentsCorrectionsList>'
+        '<CommentsCorrections RefType="ErratumIn"><PMID>3001</PMID><Note>Dose correction</Note></CommentsCorrections>'
+        '<CommentsCorrections RefType="RetractionIn"><PMID>3002</PMID><Note>Data discrepancy</Note></CommentsCorrections>'
+        '</CommentsCorrectionsList>'
+        '</MedlineCitation><PubmedData/></PubmedArticle>'
+        '</PubmedArticleSet>'
+    )
+
+    def test_pubmed_get_normalized_standard(self):
+        mock_resp = MagicMock(status_code=200, text=self.STANDARD_XML)
+        with patch.object(s, "_request", return_value=mock_resp):
+            res = s.pubmed_get("2001", mode="normalized")
+            self.assertEqual(res["status"], "found")
+            self.assertEqual(res["pmid"], "2001")
+            self.assertEqual(res["mode"], "normalized")
+            self.assertIn("integrity", res)
+            self.assertEqual(res["integrity"]["algorithm"], "sha256")
+
+            rec = res["record"]
+            self.assertEqual(rec["title"]["status"], "available")
+            self.assertEqual(rec["title"]["value"], "Cardiomyopathy trial results")
+            self.assertEqual(rec["abstract"]["status"], "available")
+            self.assertEqual(rec["abstract"]["value"], "AIM: Evaluate therapy.\nCONCLUSION: Therapy effective.")
+            self.assertEqual(rec["doi"]["status"], "available")
+            self.assertEqual(rec["doi"]["value"], "10.1016/cardio.2024.01")
+            self.assertEqual(rec["pmcid"]["status"], "available")
+            self.assertEqual(rec["pmcid"]["value"], "PMC8888")
+            self.assertEqual(rec["publication_types"]["status"], "available")
+            self.assertEqual(rec["publication_types"]["value"], ["Randomized Controlled Trial"])
+            self.assertFalse(rec["has_retraction_notice"])
+            self.assertFalse(rec["has_erratum_notice"])
+            self.assertEqual(res["provenance"]["utility"], "efetch")
+
+    def test_pubmed_get_missing_doi_and_abstract(self):
+        mock_resp = MagicMock(status_code=200, text=self.MISSING_FIELDS_XML)
+        with patch.object(s, "_request", return_value=mock_resp):
+            res = s.pubmed_get("2002", mode="normalized")
+            rec = res["record"]
+            self.assertEqual(rec["doi"]["status"], "not_returned_by_ncbi")
+            self.assertIsNone(rec["doi"]["value"])
+            self.assertEqual(rec["pmcid"]["status"], "not_returned_by_ncbi")
+            self.assertIsNone(rec["pmcid"]["value"])
+            self.assertEqual(rec["abstract"]["status"], "missing")
+            self.assertIsNone(rec["abstract"]["value"])
+            self.assertEqual(rec["publication_types"]["status"], "not_returned_by_ncbi")
+            self.assertEqual(rec["publication_types"]["value"], [])
+            self.assertEqual(rec["authors"]["status"], "missing")
+            self.assertEqual(rec["authors"]["value"], [])
+
+    def test_pubmed_get_errata_and_retractions(self):
+        mock_resp = MagicMock(status_code=200, text=self.ERRATA_RETRACTION_XML)
+        with patch.object(s, "_request", return_value=mock_resp):
+            res = s.pubmed_get("2003", mode="normalized")
+            rec = res["record"]
+            self.assertTrue(rec["has_retraction_notice"])
+            self.assertTrue(rec["has_erratum_notice"])
+            self.assertEqual(len(rec["comments_corrections"]), 2)
+            types = [c["ref_type"] for c in rec["comments_corrections"]]
+            self.assertIn("ErratumIn", types)
+            self.assertIn("RetractionIn", types)
+
+    def test_pubmed_get_raw_mode(self):
+        mock_resp = MagicMock(status_code=200, text=self.STANDARD_XML)
+        with patch.object(s, "_request", return_value=mock_resp):
+            res = s.pubmed_get("2001", mode="raw")
+            self.assertEqual(res["status"], "found")
+            self.assertEqual(res["mode"], "raw")
+            self.assertIn("<PubmedArticle>", res["raw_xml"])
+            self.assertIn("<PMID>2001</PMID>", res["raw_xml"])
+            self.assertEqual(res["integrity"]["algorithm"], "sha256")
+            self.assertEqual(len(res["integrity"]["response_hash"]), 64)
+
+    def test_pubmed_get_not_found(self):
+        mock_resp = MagicMock(status_code=200, text='<?xml version="1.0"?><PubmedArticleSet></PubmedArticleSet>')
+        with patch.object(s, "_request", return_value=mock_resp):
+            res = s.pubmed_get("99999", mode="normalized")
+            self.assertEqual(res["status"], "not_found")
+            self.assertIsNone(res["record"])
+            self.assertEqual(res["pmid"], "99999")
+
+    def test_pubmed_get_validation(self):
+        with self.assertRaises(ValueError):
+            s.pubmed_get("abc")
+        with self.assertRaises(ValueError):
+            s.pubmed_get("123; DROP TABLE")
+        with self.assertRaises(ValueError):
+            s.pubmed_get("123", mode="invalid_mode")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -16,9 +16,11 @@ Or run without installing:
 ### Provenance-First & Systematic Review Tools
 | Tool | Purpose |
 |---|---|
+| `pubmed_get(pmid, mode="normalized")` | Retrieve a single record by PMID. In `normalized` mode, returns deterministic schema with structured missingness indicators (`available`, `missing`, `not_returned_by_ncbi`) and errata/retraction notices. In `raw` mode, returns verbatim NCBI XML with SHA-256 integrity hash. |
 | `pubmed_search(query, max_results=20, start=0, sort="relevance", date_from=None, date_to=None, use_history=False)` | Search PubMed with a PRISMA-compliant reproducibility object (`original_query`, `effective_query`, `count`, `executed_at`), Entrez History tokens (`webenv`, `query_key`), and machine-verifiable provenance. |
 | `pubmed_fetch(pmids)` | Bulk-fetch PubMed records with audit provenance and explicit per-record status tracking (`success` vs `not_found`). |
 | `pubmed_database_info(db="pubmed")` | Query NCBI EInfo for database statistics (total records, last update timestamp) and search field tag definitions. |
+
 
 ### Access & Retrieval Tools
 | Tool | Purpose |
