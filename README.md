@@ -60,6 +60,58 @@ Add to your MCP client config (Claude Desktop, Antigravity, Cursor, etc.):
       "args": ["pubmed-access-mcp"],
       "env": {"NCBI_EMAIL": "you@example.com", "UNPAYWALL_EMAIL": "you@example.com"}}}}
 
+### In OpenCode
+
+OpenCode uses `opencode.json` (per project) or `~/.config/opencode/opencode.jsonc` (global). Note that OpenCode uses `type: "local"` and a single command array:
+
+#### With `uvx`
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "pubmed-scraper": {
+      "type": "local",
+      "command": ["uvx", "pubmed-access-mcp"],
+      "environment": {
+        "NCBI_EMAIL": "you@example.com",
+        "UNPAYWALL_EMAIL": "you@example.com"
+      }
+    }
+  }
+}
+```
+
+#### From source or local virtualenv
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "pubmed-scraper": {
+      "type": "local",
+      "command": [
+        "/path/to/.venv/bin/python",
+        "/path/to/server.py"
+      ],
+      "environment": {
+        "NCBI_EMAIL": "you@example.com",
+        "UNPAYWALL_EMAIL": "you@example.com"
+      }
+    }
+  }
+}
+```
+*(On Windows, escape path backslashes e.g. `C:\\path\\to\\.venv\\Scripts\\python.exe`)*
+
+#### Via OpenCode CLI
+```bash
+opencode mcp add pubmed-scraper --env NCBI_EMAIL=you@example.com --env UNPAYWALL_EMAIL=you@example.com -- uvx pubmed-access-mcp
+```
+
+Verify in OpenCode:
+```bash
+opencode mcp list
+```
+
 ### From source (development)
 
     git clone https://github.com/ahsanmandhar-ui/pubmed-mcp.git
