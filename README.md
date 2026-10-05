@@ -5,11 +5,11 @@ Built for evidence synthesis: the server returns only what NCBI returns, and fla
 
 ## Quick install
 
-    pip install pubmed-mcp
+    pip install pubmed-access-mcp
 
 Or run without installing:
 
-    uvx pubmed-mcp
+    uvx pubmed-access-mcp
 
 ## Tools
 | Tool | Purpose |
@@ -32,11 +32,11 @@ Sources are Unpaywall (via DOI) and PubMed Central (via PMCID). Set `UNPAYWALL_E
 
 ## Register in your MCP client
 
-### After `pip install pubmed-mcp`
+### After `pip install pubmed-access-mcp`
 Add to your MCP client config (Claude Desktop, Antigravity, Cursor, etc.):
 
     {"mcpServers": {"pubmed-scraper": {
-      "command": "pubmed-mcp",
+      "command": "pubmed-access-mcp",
       "args": [],
       "env": {"NCBI_EMAIL": "you@example.com", "UNPAYWALL_EMAIL": "you@example.com"}}}}
 
@@ -44,7 +44,7 @@ Add to your MCP client config (Claude Desktop, Antigravity, Cursor, etc.):
 
     {"mcpServers": {"pubmed-scraper": {
       "command": "uvx",
-      "args": ["pubmed-mcp"],
+      "args": ["pubmed-access-mcp"],
       "env": {"NCBI_EMAIL": "you@example.com", "UNPAYWALL_EMAIL": "you@example.com"}}}}
 
 ### From source (development)

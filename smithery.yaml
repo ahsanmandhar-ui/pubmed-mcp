@@ -1,0 +1,33 @@
+# Smithery.ai configuration for pubmed-access-mcp
+# https://smithery.ai/docs
+startCommand:
+  type: "stdio"
+  configSchema:
+    type: "object"
+    properties:
+      NCBI_EMAIL:
+        type: "string"
+        title: "NCBI Email"
+        description: "Email address for NCBI E-utilities usage policy (recommended)"
+      NCBI_API_KEY:
+        type: "string"
+        title: "NCBI API Key"
+        description: "Free API key from NCBI (raises rate limit from 3/s to 10/s). Get one at https://www.ncbi.nlm.nih.gov/account/"
+      UNPAYWALL_EMAIL:
+        type: "string"
+        title: "Unpaywall Email"
+        description: "Email for Unpaywall API (enables open-access PDF detection via DOI). Falls back to NCBI_EMAIL if not set."
+    required: []
+  commandFunction:
+    # For a PyPI-published package, the command is simply the entry point
+    # Users can run: uvx pubmed-access-mcp  or  pip install pubmed-access-mcp && pubmed-access-mcp
+    |-
+      (config) => ({
+        command: "uvx",
+        args: ["pubmed-access-mcp"],
+        env: {
+          ...(config.NCBI_EMAIL ? { NCBI_EMAIL: config.NCBI_EMAIL } : {}),
+          ...(config.NCBI_API_KEY ? { NCBI_API_KEY: config.NCBI_API_KEY } : {}),
+          ...(config.UNPAYWALL_EMAIL ? { UNPAYWALL_EMAIL: config.UNPAYWALL_EMAIL } : {})
+        }
+      })
