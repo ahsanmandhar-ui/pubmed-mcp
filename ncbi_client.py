@@ -26,7 +26,7 @@ logger = logging.getLogger("pubmed-mcp.client")
 
 EUTILS_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 DEFAULT_TOOL_NAME = "pubmed-access-mcp"
-SERVER_VERSION = "0.1.0"
+SERVER_VERSION = "0.2.0"
 SCHEMA_VERSION = "1.0"
 
 
@@ -222,7 +222,7 @@ class NcbiClient:
 
     def efetch(
         self,
-        pmids: List[str],
+        pmids: Optional[List[str]] = None,
         retmode: str = "xml",
         rettype: str = "abstract",
         webenv: Optional[str] = None,

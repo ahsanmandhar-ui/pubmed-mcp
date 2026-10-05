@@ -19,6 +19,7 @@ Or run without installing:
 | `pubmed_get(pmid, mode="normalized")` | Retrieve a single record by PMID. In `normalized` mode, returns deterministic schema with structured missingness indicators (`available`, `missing`, `not_returned_by_ncbi`) and errata/retraction notices. In `raw` mode, returns verbatim NCBI XML with SHA-256 integrity hash. |
 | `pubmed_search(query, max_results=20, start=0, sort="relevance", date_from=None, date_to=None, use_history=False)` | Search PubMed with a PRISMA-compliant reproducibility object (`original_query`, `effective_query`, `count`, `executed_at`), Entrez History tokens (`webenv`, `query_key`), and machine-verifiable provenance. |
 | `pubmed_fetch(pmids)` | Bulk-fetch PubMed records with audit provenance and explicit per-record status tracking (`success` vs `not_found`). |
+| `pubmed_batch_fetch(pmids=None, webenv=None, query_key=None, retstart=0, total_records=None, batch_size=200)` | Entrez History & large-scale batch retrieval. Supports slicing arbitrary length PMID lists or iterating Entrez History tokens across multiple rate-limited chunks with machine-verifiable audit provenance, error resilience, and explicit per-record statuses. |
 | `pubmed_database_info(db="pubmed")` | Query NCBI EInfo for database statistics (total records, last update timestamp) and search field tag definitions. |
 
 

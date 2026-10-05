@@ -4,7 +4,7 @@
 - **Name:** pubmed-access-mcp (Repository: ahsanmandhar-ui/pubmed-mcp)
 - **Repository:** https://github.com/ahsanmandhar-ui/pubmed-mcp
 - **Purpose:** Minimal, auditable, provenance-first Model Context Protocol (MCP) server for PubMed via NCBI E-utilities, specifically optimized for evidence synthesis, systematic reviews, and reproducible medical/scientific research.
-- **Current version:** 0.1.0
+- **Current version:** 0.2.0
 - **Schema version:** 1.0
 
 ## 2. Product Thesis
@@ -150,7 +150,7 @@ NCBI E-utilities (https://eutils.ncbi.nlm.nih.gov/entrez/eutils)
       "term": "neoplasm",
       "retmax": 20
     },
-    "server_version": "0.1.0",
+    "server_version": "0.2.0",
     "schema_version": "1.0"
   }
   ```
@@ -209,13 +209,14 @@ NCBI E-utilities (https://eutils.ncbi.nlm.nih.gov/entrez/eutils)
 - [x] Implemented `pubmed_search` with PRISMA-compliant reproducibility object (`database`, `original_query`, `effective_query`, `retstart`, `retmax`, `count`, `executed_at`), Entrez History tokens (`webenv`, `query_key`), and machine-verifiable provenance.
 - [x] Implemented `pubmed_fetch` with explicit per-record status tracking (`success` vs `not_found`) and provenance.
 - [x] Implemented `pubmed_get` (single PMID record retrieval) supporting `mode="normalized"` (clean deterministic schema with structured missingness indicators) and `mode="raw"` (verbatim XML with SHA-256 integrity hash).
+- [x] Implemented `pubmed_batch_fetch` with multi-batch chunking (>200 PMIDs) and NCBI Entrez History pagination (`webenv`, `query_key`, `retstart`, `total_records`, `batch_size`), error resilience, per-record statuses, and audit provenance.
 - [x] Structured missingness vocabulary: `available`, `missing`, `not_returned_by_ncbi`.
 - [x] Errata (`has_erratum_notice`) and retraction (`has_retraction_notice`) notice tracking via `comments_corrections`.
 - [x] Preserved 100% backward compatibility with legacy tool signatures and existing test suites.
-- [x] Expanded offline test suite to 26 unit tests across `test_server.py`, `test_access.py`, and `test_client.py`.
+- [x] Expanded offline test suite to 32 unit tests across `test_server.py`, `test_access.py`, and `test_client.py`.
+- [x] Bumped package version to 0.2.0 (`pyproject.toml`, `ncbi_client.py`, `server.py`).
 
 ## 16. In Progress
-- [ ] Entrez History large-scale batch retrieval (`pubmed_batch_fetch`).
 - [ ] Search snapshot identifiers (`PUBMED-YYYYMMDD-XXXXXX`) and session preservation.
 
 ## 17. Remaining Roadmap
@@ -225,9 +226,10 @@ NCBI E-utilities (https://eutils.ncbi.nlm.nih.gov/entrez/eutils)
 - [x] Implement `pubmed_database_info` and canonical `pubmed_search` with search reproducibility object.
 - [x] Maintain 100% backward compatibility for existing tools and tests.
 - [x] Implement `pubmed_get` (single PMID, raw XML vs. normalized mode, strict missingness indicators).
+- [x] Implement `pubmed_batch_fetch` (multi-chunk PMID lists, Entrez History pagination, error resilience, provenance).
 
 ### P1 (Evidence Synthesis & History)
-- [ ] Entrez History support (`usehistory=y`, `WebEnv`, `QueryKey`) in `pubmed_batch_fetch` for multi-thousand PMID retrieval.
+- [x] Entrez History support (`usehistory=y`, `WebEnv`, `QueryKey`) in `pubmed_batch_fetch` for multi-thousand PMID retrieval.
 - [ ] Search snapshot identifiers (`PUBMED-YYYYMMDD-XXXXXX`) and SHA-256 response hashing.
 
 ### P2 (Exports & Validation)
@@ -241,18 +243,19 @@ NCBI E-utilities (https://eutils.ncbi.nlm.nih.gov/entrez/eutils)
 ## 19. Known Limitations
 - Abstract-level data only; NCBI E-utilities does not return full text (unless PMCID is in open-access subset).
 - Unpaywall lookup requires `UNPAYWALL_EMAIL` or `NCBI_EMAIL` to query their API.
-- Entrez History (`WebEnv`) is exposed in `pubmed_search`, but full multi-batch retrieval loop (`pubmed_batch_fetch`) remains to be implemented.
 - MCP server runs over stdio; HTTP/SSE transport required for cloud-hosted registry endpoints like Smithery.
 
 ## 20. Architectural Decisions
 - **Decision:** Split package into decoupled layers: tool layer (`server.py`), client layer (`ncbi_client.py`), and access layer (`access.py`).
   - *Rationale:* Prevents HTTP request logic and XML parsing from tangling with MCP tool dispatch.
-- **Decision:** Keep legacy tool names (`search_pubmed`, `fetch_abstracts`) alongside target names (`pubmed_get`, `pubmed_search`, `pubmed_fetch`, `pubmed_database_info`).
+- **Decision:** Keep legacy tool names (`search_pubmed`, `fetch_abstracts`) alongside target names (`pubmed_get`, `pubmed_search`, `pubmed_fetch`, `pubmed_batch_fetch`, `pubmed_database_info`).
   - *Rationale:* Preserves backward compatibility for existing scripts, clients, and test fixtures.
 - **Decision:** Strict non-inference rule.
   - *Rationale:* Medical research and evidence synthesis demand 100% source fidelity; AI hallucinations must not enter citation graphs.
 - **Decision:** In `pubmed_get`, wrap missing fields in `{ "value": ..., "status": ... }` objects.
   - *Rationale:* Clearly distinguishes between fields NCBI didn't return (e.g. DOI) versus fields that were empty in the abstract.
+- **Decision:** `pubmed_batch_fetch` partial failure tolerance.
+  - *Rationale:* In systematic reviews retrieving hundreds or thousands of citations, a transient failure on a single batch chunk must not discard already retrieved batches.
 
 ## 21. Rejected Approaches
 - **Rejected:** Inferred metadata / LLM-based abstract completion.
@@ -294,24 +297,24 @@ uvx pubmed-access-mcp
 
 ## 25. Last Verified
 - **Date:** 2026-10-05
-- **Git commit:** Working tree updated (pending commit)
-- **Tests:** 26 passed, 0 failed (offline synthetic test suite across all 3 test modules)
-- **Build:** Built successfully (wheel and sdist for pubmed-access-mcp 0.1.0)
+- **Git commit:** Working tree updated
+- **Tests:** 32 passed, 0 failed (offline synthetic test suite across all 3 test modules)
+- **Build:** Built successfully (wheel and sdist for pubmed-access-mcp 0.2.0)
 - **Lint:** Clean syntax
 - **Typecheck:** Clean execution
 - **Files Changed in Session:**
-  - `server.py` (Added normalize_article and pubmed_get tool)
-  - `README.md` (Documented pubmed_get in tools table)
-  - `DEVELOPMENT_STATE.md` (Updated completed items, test counts, next task)
-  - `tests/test_client.py` (Added TestPubmedGet covering standard records, missing DOIs, errata, retractions, raw mode, validation)
+  - `server.py` (Implemented pubmed_batch_fetch tool, exposed SERVER_VERSION)
+  - `ncbi_client.py` (Bumped SERVER_VERSION to 0.2.0, made pmids optional in efetch)
+  - `pyproject.toml` (Bumped version to 0.2.0)
+  - `README.md` (Documented pubmed_batch_fetch in tools table)
+  - `DEVELOPMENT_STATE.md` (Updated completed items, roadmap, test counts, version 0.2.0)
+  - `tests/test_client.py` (Added TestPubmedBatchFetch with 6 new tests covering chunking, history pagination, missing IDs, error resilience, and validation)
 
 ## 26. EXACT NEXT TASK
-Implement `pubmed_batch_fetch`:
-1. Support multi-batch pagination using NCBI Entrez History (`webenv` and `query_key`) or long lists of PMIDs (>200).
-2. Fetch in chunks of up to 200 PMIDs per EFetch call with rate-limit respect and progress reporting.
-3. Emit per-batch and overall audit provenance.
-4. Add offline synthetic tests covering multi-batch chunking, pagination offsets, and partial failures.
+1. Finalize PyPI release for `pubmed-access-mcp` v0.2.0.
+2. Implement search snapshot identifiers (`PUBMED-YYYYMMDD-XXXXXX`) and session preservation.
+3. Implement `pubmed_validate` tool (syntax, duplicate checking, MeSH validation).
 
 ## 27. SESSION HANDOFF
 Next agent should:
-Review `DEVELOPMENT_STATE.md`, inspect Section 26, and implement `pubmed_batch_fetch` with Entrez History support, chunked retrieval, and comprehensive offline test fixtures in `tests/test_client.py`.
+Review `DEVELOPMENT_STATE.md`, inspect Section 26, and proceed with snapshot identifiers and export utilities (P1/P2 roadmap).

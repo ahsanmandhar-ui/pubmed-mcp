@@ -43,7 +43,7 @@ class TestNcbiClient(unittest.TestCase):
         self.assertEqual(prov["provider"], "NCBI PubMed")
         self.assertEqual(prov["database"], "pubmed")
         self.assertEqual(prov["utility"], "esearch")
-        self.assertEqual(prov["server_version"], "0.1.0")
+        self.assertEqual(prov["server_version"], "0.2.0")
         self.assertEqual(prov["schema_version"], "1.0")
         self.assertIn("timestamp", prov)
         self.assertNotIn("api_key", prov["request_parameters"])
@@ -252,6 +252,197 @@ class TestPubmedGet(unittest.TestCase):
             s.pubmed_get("123; DROP TABLE")
         with self.assertRaises(ValueError):
             s.pubmed_get("123", mode="invalid_mode")
+
+
+class TestPubmedBatchFetch(unittest.TestCase):
+    def setUp(self):
+        # Disable sleep/throttle during tests for maximum test execution speed
+        self.throttle_patcher = patch.object(s, "_throttle", return_value=None)
+        self.throttle_patcher.start()
+
+    def tearDown(self):
+        self.throttle_patcher.stop()
+
+    @staticmethod
+    def _make_xml_for_pmids(pmids):
+        articles = []
+        for p in pmids:
+            articles.append(
+                f'<PubmedArticle><MedlineCitation><PMID>{p}</PMID><Article>'
+                f'<ArticleTitle>Title for {p}</ArticleTitle>'
+                f'</Article></MedlineCitation></PubmedArticle>'
+            )
+        return f'<?xml version="1.0"?><PubmedArticleSet>{"".join(articles)}</PubmedArticleSet>'
+
+    def test_multi_batch_chunking_long_pmid_list(self):
+        # 250 PMIDs with batch_size=200 -> 2 batches (200 + 50)
+        pmid_list = [str(10000 + i) for i in range(250)]
+
+        def mock_request(endpoint, params, method="GET"):
+            self.assertEqual(endpoint, "efetch.fcgi")
+            self.assertEqual(method, "POST")
+            chunk_ids = params["id"].split(",")
+            mock_resp = MagicMock(status_code=200)
+            mock_resp.text = self._make_xml_for_pmids(chunk_ids)
+            return mock_resp
+
+        with patch.object(s, "_request", side_effect=mock_request):
+            res = s.pubmed_batch_fetch(pmids=pmid_list, batch_size=200)
+            self.assertEqual(res["mode"], "pmids")
+            self.assertEqual(res["total_requested"], 250)
+            self.assertEqual(res["total_returned"], 250)
+            self.assertEqual(res["batches_executed"], 2)
+            self.assertEqual(res["batches_successful"], 2)
+            self.assertEqual(res["batches_failed"], 0)
+            self.assertEqual(len(res["records"]), 250)
+            self.assertEqual(len(res["batches"]), 2)
+            self.assertEqual(res["batches"][0]["requested"], 200)
+            self.assertEqual(res["batches"][0]["returned"], 200)
+            self.assertEqual(res["batches"][0]["retstart"], 0)
+            self.assertEqual(res["batches"][1]["requested"], 50)
+            self.assertEqual(res["batches"][1]["returned"], 50)
+            self.assertEqual(res["batches"][1]["retstart"], 200)
+            self.assertEqual(res["not_found"], [])
+            self.assertEqual(res["provenance"]["utility"], "efetch_batch")
+            self.assertEqual(res["provenance"]["request_parameters"]["total_requested"], 250)
+            # Ensure every record has status == 'success'
+            self.assertTrue(all(r["status"] == "success" for r in res["records"]))
+
+    def test_entrez_history_retrieval_with_pagination(self):
+        # WebEnv and query_key with retstart=10, total_records=5, batch_size=2 -> 3 batches (2, 2, 1)
+        calls = []
+
+        def mock_request(endpoint, params, method="GET"):
+            self.assertEqual(endpoint, "efetch.fcgi")
+            self.assertEqual(params["WebEnv"], "MCID_history_test")
+            self.assertEqual(params["query_key"], "2")
+            retstart = params["retstart"]
+            retmax = params["retmax"]
+            calls.append((retstart, retmax))
+            chunk_pmids = [str(5000 + retstart + i) for i in range(retmax)]
+            mock_resp = MagicMock(status_code=200)
+            mock_resp.text = self._make_xml_for_pmids(chunk_pmids)
+            return mock_resp
+
+        with patch.object(s, "_request", side_effect=mock_request):
+            res = s.pubmed_batch_fetch(
+                webenv="MCID_history_test",
+                query_key="2",
+                retstart=10,
+                total_records=5,
+                batch_size=2,
+            )
+            self.assertEqual(res["mode"], "entrez_history")
+            self.assertEqual(res["total_requested"], 5)
+            self.assertEqual(res["total_returned"], 5)
+            self.assertEqual(res["batches_executed"], 3)
+            self.assertEqual(res["batches_successful"], 3)
+            self.assertEqual(res["batches_failed"], 0)
+            self.assertEqual(len(res["records"]), 5)
+            self.assertEqual(calls, [(10, 2), (12, 2), (14, 1)])
+            self.assertEqual(res["batches"][0]["retstart"], 10)
+            self.assertEqual(res["batches"][1]["retstart"], 12)
+            self.assertEqual(res["batches"][2]["retstart"], 14)
+            self.assertTrue(all(r["status"] == "success" for r in res["records"]))
+            self.assertEqual(res["records"][0]["pmid"], "5010")
+            self.assertEqual(res["records"][4]["pmid"], "5014")
+
+    def test_entrez_history_without_total_records_queries_count(self):
+        # When total_records is None, queries esearch to get count then fetches
+        def mock_request(endpoint, params, method="GET"):
+            mock_resp = MagicMock(status_code=200)
+            if endpoint == "esearch.fcgi":
+                mock_resp.json.return_value = {
+                    "esearchresult": {"count": "3", "webenv": params["WebEnv"], "querykey": params["query_key"]}
+                }
+                return mock_resp
+            elif endpoint == "efetch.fcgi":
+                retstart = params["retstart"]
+                retmax = params["retmax"]
+                chunk_pmids = [str(7000 + retstart + i) for i in range(retmax)]
+                mock_resp.text = self._make_xml_for_pmids(chunk_pmids)
+                return mock_resp
+            raise ValueError(f"Unexpected endpoint {endpoint}")
+
+        with patch.object(s, "_request", side_effect=mock_request):
+            res = s.pubmed_batch_fetch(
+                webenv="MCID_count_test",
+                query_key="1",
+                batch_size=10,
+            )
+            self.assertEqual(res["mode"], "entrez_history")
+            self.assertEqual(res["total_requested"], 3)
+            self.assertEqual(res["total_returned"], 3)
+            self.assertEqual(res["batches_executed"], 1)
+            self.assertEqual(res["batches_successful"], 1)
+            self.assertEqual(len(res["records"]), 3)
+
+    def test_partial_batch_missing_ids_handling(self):
+        # 3 PMIDs requested, only 2 exist in XML -> 1 missing
+        requested_ids = ["101", "102", "999"]
+        mock_resp = MagicMock(status_code=200)
+        mock_resp.text = self._make_xml_for_pmids(["101", "102"])
+
+        with patch.object(s, "_request", return_value=mock_resp):
+            res = s.pubmed_batch_fetch(pmids=requested_ids, batch_size=10)
+            self.assertEqual(res["total_requested"], 3)
+            self.assertEqual(res["total_returned"], 2)
+            self.assertEqual(res["not_found"], ["999"])
+            self.assertEqual(res["batches"][0]["status"], "partial_success")
+            self.assertEqual(res["batches"][0]["not_found"], ["999"])
+
+            # Verify results_summary contains per-record success vs not_found status
+            statuses = {item["pmid"]: item["status"] for item in res["results_summary"]}
+            self.assertEqual(statuses["101"], "success")
+            self.assertEqual(statuses["102"], "success")
+            self.assertEqual(statuses["999"], "not_found")
+
+    def test_batch_error_resilience(self):
+        # 4 PMIDs across 2 batches of 2. Batch 1 succeeds, Batch 2 fails with network exception.
+        def mock_request(endpoint, params, method="GET"):
+            chunk_ids = params["id"].split(",")
+            if "300" in chunk_ids:
+                raise RuntimeError("503 Service Unavailable")
+            mock_resp = MagicMock(status_code=200)
+            mock_resp.text = self._make_xml_for_pmids(chunk_ids)
+            return mock_resp
+
+        with patch.object(s, "_request", side_effect=mock_request):
+            res = s.pubmed_batch_fetch(pmids=["100", "200", "300", "400"], batch_size=2)
+            # Batch 1 succeeded, Batch 2 failed without crashing
+            self.assertEqual(res["batches_executed"], 2)
+            self.assertEqual(res["batches_successful"], 1)
+            self.assertEqual(res["batches_failed"], 1)
+            self.assertEqual(res["batches"][0]["status"], "success")
+            self.assertEqual(res["batches"][1]["status"], "failed")
+            self.assertIn("503 Service Unavailable", res["batches"][1]["error"])
+            self.assertEqual(res["total_returned"], 2)
+            self.assertEqual(len(res["records"]), 2)
+            self.assertEqual(res["records"][0]["pmid"], "100")
+            self.assertEqual(res["records"][1]["pmid"], "200")
+            self.assertEqual(res["not_found"], ["300", "400"])
+
+    def test_parameter_validation(self):
+        # Missing both pmids and history
+        with self.assertRaises(ValueError):
+            s.pubmed_batch_fetch()
+        with self.assertRaises(ValueError):
+            s.pubmed_batch_fetch(pmids=[])
+        # Incomplete history tokens
+        with self.assertRaises(ValueError):
+            s.pubmed_batch_fetch(webenv="MCID_env")
+        with self.assertRaises(ValueError):
+            s.pubmed_batch_fetch(query_key="1")
+        # Invalid PMID syntax
+        with self.assertRaises(ValueError):
+            s.pubmed_batch_fetch(pmids=["invalid_pmid"])
+        with self.assertRaises(ValueError):
+            s.pubmed_batch_fetch(pmids=["100", "200; DROP TABLE"])
+        # Invalid batch_size
+        with self.assertRaises(ValueError):
+            s.pubmed_batch_fetch(pmids=["100"], batch_size=0)
+        with self.assertRaises(ValueError):
+            s.pubmed_batch_fetch(pmids=["100"], batch_size=-10)
 
 
 if __name__ == "__main__":

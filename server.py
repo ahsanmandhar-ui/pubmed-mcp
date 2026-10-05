@@ -34,6 +34,7 @@ logging.basicConfig(stream=sys.stderr, level=logging.INFO, format="%(asctime)s %
 log = logging.getLogger("pubmed-mcp")
 
 EUTILS = ncbi_client.EUTILS_BASE
+SERVER_VERSION = ncbi_client.SERVER_VERSION
 MISSING = "Data not provided in PubMed abstract"
 MAX_SEARCH = 200
 MAX_FETCH = 200
@@ -501,6 +502,245 @@ def pubmed_get(pmid: str, mode: str = "normalized") -> dict:
         "record": rec,
         "integrity": ncbi_client.NcbiClient.compute_hash(rec_json),
         "provenance": prov,
+    }
+
+
+@mcp.tool()
+def pubmed_batch_fetch(
+    pmids: Optional[List[str]] = None,
+    webenv: Optional[str] = None,
+    query_key: Optional[str] = None,
+    retstart: int = 0,
+    total_records: Optional[int] = None,
+    batch_size: int = 200,
+) -> dict:
+    """Batch fetch PubMed records in chunks supporting long PMID lists (>200) or NCBI Entrez History.
+
+    Supports two retrieval modes:
+      1. Direct PMID batching: Accepts an arbitrary list of PMIDs, chunking them into batch_size (max 200).
+      2. Entrez History batching: Accepts webenv and query_key from a prior pubmed_search(..., use_history=True),
+         iterating retstart up to total_records in chunks of batch_size.
+
+    Args:
+      pmids: Optional list of PMIDs (arbitrary length; chunked into batch_size).
+      webenv: Optional NCBI WebEnv token from a prior pubmed_search(..., use_history=True).
+      query_key: Optional NCBI QueryKey token from a prior pubmed_search.
+      retstart: Starting offset for pagination (default 0).
+      total_records: Total records to retrieve in Entrez History mode (if omitted, queries history count).
+      batch_size: Number of records per chunk (1-200, default 200).
+
+    Returns:
+      Comprehensive batch execution report, per-batch results, per-record statuses ('status': 'success'),
+      not_found PMIDs, and audit provenance.
+    """
+    if batch_size is None or int(batch_size) <= 0:
+        raise ValueError("batch_size must be a positive integer (1-200)")
+    effective_batch_size = min(int(batch_size), MAX_FETCH)
+    clean_retstart = max(0, int(retstart or 0))
+
+    has_pmids = pmids is not None and len(pmids) > 0
+    has_history = bool(webenv and query_key)
+
+    if not has_pmids and not has_history:
+        raise ValueError("Must provide either a non-empty list of 'pmids' or both 'webenv' and 'query_key'.")
+
+    clean_pmids = []
+    if pmids is not None:
+        seen = set()
+        for p in pmids:
+            s_pmid = str(p).strip()
+            if not PMID_RE.match(s_pmid):
+                raise ValueError(f"invalid PMID {p!r}: PMIDs are 1-9 digits")
+            if s_pmid not in seen:
+                seen.add(s_pmid)
+                clean_pmids.append(s_pmid)
+        if not clean_pmids and not has_history:
+            raise ValueError("Must provide at least one valid PMID or valid 'webenv' and 'query_key'.")
+
+    mode = "pmids" if clean_pmids else "entrez_history"
+    all_records = []
+    all_not_found = []
+    batches_results = []
+    successful_batches = 0
+    failed_batches = 0
+
+    if mode == "pmids":
+        chunks = [
+            clean_pmids[i : i + effective_batch_size]
+            for i in range(0, len(clean_pmids), effective_batch_size)
+        ]
+        target_total = len(clean_pmids)
+
+        for idx, chunk in enumerate(chunks):
+            _throttle()
+            params = {
+                "db": "pubmed",
+                "id": ",".join(chunk),
+                "retmode": "xml",
+                "rettype": "abstract",
+            }
+            batch_prov = client.build_provenance("efetch", params)
+            try:
+                r = _request("efetch.fcgi", params, method="POST")
+                parsed = parse_efetch(r.text, chunk)
+                chunk_records = [{**rec, "status": "success"} for rec in parsed.get("records", [])]
+                chunk_not_found = parsed.get("not_found", [])
+                all_records.extend(chunk_records)
+                all_not_found.extend(chunk_not_found)
+                successful_batches += 1
+                batches_results.append({
+                    "batch_index": idx,
+                    "status": "success" if not chunk_not_found else "partial_success",
+                    "requested": len(chunk),
+                    "returned": len(chunk_records),
+                    "retstart": idx * effective_batch_size,
+                    "pmids": [rec["pmid"] for rec in chunk_records],
+                    "not_found": chunk_not_found,
+                    "records": chunk_records,
+                    "error": None,
+                    "provenance": batch_prov,
+                })
+            except Exception as e:
+                failed_batches += 1
+                all_not_found.extend(chunk)
+                batches_results.append({
+                    "batch_index": idx,
+                    "status": "failed",
+                    "requested": len(chunk),
+                    "returned": 0,
+                    "retstart": idx * effective_batch_size,
+                    "pmids": [],
+                    "not_found": chunk,
+                    "records": [],
+                    "error": str(e),
+                    "provenance": batch_prov,
+                })
+
+    else:
+        # Entrez History mode
+        if total_records is not None:
+            target_total = max(0, int(total_records))
+        else:
+            search_params = {
+                "db": "pubmed",
+                "WebEnv": webenv,
+                "query_key": query_key,
+                "retmax": 0,
+                "retmode": "json",
+            }
+            try:
+                esearch_res = _request("esearch.fcgi", search_params, method="GET").json().get("esearchresult", {})
+                total_history_count = int(esearch_res.get("count", 0))
+                target_total = max(0, total_history_count - clean_retstart)
+            except Exception as e:
+                log.warning("Could not determine total records from history count: %s", e)
+                target_total = None
+
+        fetched_so_far = 0
+        batch_idx = 0
+
+        while True:
+            if target_total is not None and fetched_so_far >= target_total:
+                break
+
+            chunk_size = effective_batch_size
+            if target_total is not None:
+                chunk_size = min(chunk_size, target_total - fetched_so_far)
+
+            if chunk_size <= 0:
+                break
+
+            curr_retstart = clean_retstart + fetched_so_far
+            _throttle()
+            params = {
+                "db": "pubmed",
+                "WebEnv": webenv,
+                "query_key": query_key,
+                "retstart": curr_retstart,
+                "retmax": chunk_size,
+                "retmode": "xml",
+                "rettype": "abstract",
+            }
+            batch_prov = client.build_provenance("efetch", params)
+
+            try:
+                r = _request("efetch.fcgi", params, method="POST")
+                root = ET.fromstring(r.text)
+                batch_articles = [parse_article(n) for n in root.findall("PubmedArticle")]
+                chunk_records = [{**rec, "status": "success"} for rec in batch_articles if rec]
+                ret_count = len(chunk_records)
+                all_records.extend(chunk_records)
+                successful_batches += 1
+
+                batches_results.append({
+                    "batch_index": batch_idx,
+                    "status": "success",
+                    "requested": chunk_size,
+                    "returned": ret_count,
+                    "retstart": curr_retstart,
+                    "pmids": [rec["pmid"] for rec in chunk_records],
+                    "not_found": [],
+                    "records": chunk_records,
+                    "error": None,
+                    "provenance": batch_prov,
+                })
+
+                fetched_so_far += ret_count
+                batch_idx += 1
+
+                # If NCBI returned fewer records than requested or 0 records, we have reached the end
+                if ret_count < chunk_size:
+                    break
+
+            except Exception as e:
+                failed_batches += 1
+                batches_results.append({
+                    "batch_index": batch_idx,
+                    "status": "failed",
+                    "requested": chunk_size,
+                    "returned": 0,
+                    "retstart": curr_retstart,
+                    "pmids": [],
+                    "not_found": [],
+                    "records": [],
+                    "error": str(e),
+                    "provenance": batch_prov,
+                })
+                fetched_so_far += chunk_size
+                batch_idx += 1
+
+    results_summary = (
+        [{"pmid": r["pmid"], "status": "success"} for r in all_records]
+        + [{"pmid": p, "status": "not_found"} for p in all_not_found]
+    )
+
+    overall_prov = client.build_provenance(
+        "efetch_batch",
+        {
+            "mode": mode,
+            "total_requested": len(clean_pmids) if mode == "pmids" else target_total,
+            "total_returned": len(all_records),
+            "batches_executed": len(batches_results),
+            "batch_size": effective_batch_size,
+            "retstart": clean_retstart,
+            "webenv": webenv if mode == "entrez_history" else None,
+            "query_key": query_key if mode == "entrez_history" else None,
+        },
+    )
+
+    return {
+        "mode": mode,
+        "total_requested": len(clean_pmids) if mode == "pmids" else (target_total if target_total is not None else len(all_records)),
+        "total_returned": len(all_records),
+        "batches_executed": len(batches_results),
+        "batches_successful": successful_batches,
+        "batches_failed": failed_batches,
+        "batch_size": effective_batch_size,
+        "batches": batches_results,
+        "records": all_records,
+        "not_found": all_not_found,
+        "results_summary": results_summary,
+        "provenance": overall_prov,
     }
 
 
