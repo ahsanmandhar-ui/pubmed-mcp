@@ -36,4 +36,4 @@ Repository = "https://github.com/ahsanmandhar-ui/pubmed-mcp"
 Issues = "https://github.com/ahsanmandhar-ui/pubmed-mcp/issues"
 
 [tool.setuptools]
-py-modules = ["server", "access"]
+py-modules = ["server", "access", "ncbi_client"]

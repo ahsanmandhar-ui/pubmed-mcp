@@ -23,6 +23,7 @@ from typing import List, Optional
 
 import requests
 import access
+import ncbi_client
 try:  # mcp 1.x
     from mcp.server.fastmcp import FastMCP
 except ModuleNotFoundError:  # mcp 2.x renamed FastMCP -> MCPServer
@@ -31,7 +32,7 @@ except ModuleNotFoundError:  # mcp 2.x renamed FastMCP -> MCPServer
 logging.basicConfig(stream=sys.stderr, level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("pubmed-mcp")
 
-EUTILS = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
+EUTILS = ncbi_client.EUTILS_BASE
 MISSING = "Data not provided in PubMed abstract"
 MAX_SEARCH = 200
 MAX_FETCH = 200
@@ -46,51 +47,21 @@ mcp = FastMCP(
     ),
 )
 
+client = ncbi_client.NcbiClient()
 
-# ----------------------------------------------------------------- config / HTTP
+
+# ----------------------------------------------------------------- config / HTTP delegates
 def _env(name: str) -> Optional[str]:
-    v = os.environ.get(name, "").strip()
-    if not v or v.upper().startswith("YOUR_") or v.startswith("${"):
-        return None  # ignore unfilled placeholders instead of sending a bad key to NCBI
-    return v
-
-
-_lock = threading.Lock()
-_last_call = 0.0
+    return client.env(name)
 
 
 def _throttle() -> None:
-    """NCBI limits: 3 requests/s without an API key, 10/s with one."""
-    global _last_call
-    gap = 0.11 if _env("NCBI_API_KEY") else 0.34
-    with _lock:
-        wait = _last_call + gap - time.monotonic()
-        if wait > 0:
-            time.sleep(wait)
-        _last_call = time.monotonic()
+    client.throttle()
 
 
 def _request(endpoint: str, params: dict, method: str = "GET") -> requests.Response:
-    params = {**params, "tool": _env("NCBI_TOOL") or "pubmed-mcp"}
-    if _env("NCBI_EMAIL"):
-        params["email"] = _env("NCBI_EMAIL")
-    if _env("NCBI_API_KEY"):
-        params["api_key"] = _env("NCBI_API_KEY")
-    url = f"{EUTILS}/{endpoint}"
-    last = "unknown error"
-    for attempt in range(4):
-        _throttle()
-        try:
-            r = requests.post(url, data=params, timeout=45) if method == "POST" else requests.get(url, params=params, timeout=45)
-            if r.status_code == 200:
-                return r
-            last = f"HTTP {r.status_code}"
-            if r.status_code not in (429, 500, 502, 503, 504):
-                break
-        except requests.RequestException as e:
-            last = f"{type(e).__name__}: {e}"
-        time.sleep(1.5 * (attempt + 1))
-    raise RuntimeError(f"NCBI E-utilities request to {endpoint} failed: {last}")
+    return client.request(endpoint, params, method)
+
 
 
 # ----------------------------------------------------------------- parsing (pure functions, unit-tested offline)
@@ -286,6 +257,116 @@ def download_pdfs(pmids: List[str], folder: Optional[str] = None) -> dict:
     for r in rows:
         counts[r["status"]] = counts.get(r["status"], 0) + 1
     return {"folder": str(dest), "counts": counts, "results": rows, "not_found": data["not_found"]}
+
+
+# ----------------------------------------------------------------- target tools (evidence-synthesis & provenance-first)
+@mcp.tool()
+def pubmed_database_info(db: str = "pubmed") -> dict:
+    """Get metadata, last update date, record count, and search field tags for an NCBI database (default: 'pubmed').
+
+    Provides audit-grade database metadata and field definitions directly from NCBI EInfo.
+    """
+    clean_db = (db or "pubmed").strip().lower()
+    res = _request("einfo.fcgi", {"db": clean_db, "retmode": "json"}, method="GET")
+    data = res.json().get("einforesult", {}).get("dbinfo", {})
+    prov = client.build_provenance("einfo", {"db": clean_db}, database=clean_db)
+    fields = [
+        {"name": f.get("name"), "full_name": f.get("fullname"), "description": f.get("description")}
+        for f in data.get("fieldlist", [])
+    ]
+    return {
+        "database": data.get("dbname") or clean_db,
+        "menu_name": data.get("menuname") or MISSING,
+        "description": data.get("description") or MISSING,
+        "record_count": int(data.get("count", 0)),
+        "last_update": data.get("lastupdate") or MISSING,
+        "field_count": len(fields),
+        "fields": fields,
+        "provenance": prov,
+    }
+
+
+@mcp.tool()
+def pubmed_search(
+    query: str,
+    max_results: int = 20,
+    start: int = 0,
+    sort: str = "relevance",
+    date_from: Optional[int] = None,
+    date_to: Optional[int] = None,
+    use_history: bool = False,
+) -> dict:
+    """Search PubMed (NCBI esearch) with reproducibility object, query translation, and audit provenance.
+
+    Args:
+      query: PubMed query; supports field tags, MeSH, and Boolean logic.
+      max_results: 1-200 (default 20).
+      start: Result offset / retstart for pagination (default 0).
+      sort: 'relevance' or 'pub_date' (newest first).
+      date_from / date_to: Optional publication-year bounds.
+      use_history: If True, stores search on NCBI Entrez History server (returns webenv & query_key).
+    """
+    q = (query or "").strip()
+    if not q:
+        raise ValueError("query must be non-empty")
+    if sort not in ("relevance", "pub_date"):
+        raise ValueError("sort must be 'relevance' or 'pub_date'")
+    n = max(1, min(int(max_results), MAX_SEARCH))
+    retstart = max(0, int(start))
+    params = {"db": "pubmed", "term": q, "retmax": n, "retstart": retstart, "retmode": "json", "sort": sort}
+    if use_history:
+        params["usehistory"] = "y"
+    if date_from or date_to:
+        params.update({
+            "datetype": "pdat",
+            "mindate": str(date_from or 1800),
+            "maxdate": str(date_to or datetime.date.today().year + 1),
+        })
+    res = _request("esearch.fcgi", params).json().get("esearchresult", {})
+    if "ERROR" in res:
+        raise RuntimeError(f"NCBI esearch error: {res['ERROR']}")
+
+    prov = client.build_provenance("esearch", params)
+    return {
+        "search": {
+            "database": "pubmed",
+            "original_query": q,
+            "effective_query": res.get("querytranslation") or MISSING,
+            "retstart": retstart,
+            "retmax": n,
+            "sort": sort,
+            "count": int(res.get("count", 0)),
+            "executed_at": prov["timestamp"],
+        },
+        "returned": len(res.get("idlist", [])),
+        "pmids": res.get("idlist", []),
+        "webenv": res.get("webenv"),
+        "query_key": res.get("querykey"),
+        "warnings": (res.get("warninglist") or {}).get("outputmessage", [])
+        + (res.get("errorlist") or {}).get("phrasesnotfound", []),
+        "provenance": prov,
+    }
+
+
+@mcp.tool()
+def pubmed_fetch(pmids: List[str]) -> dict:
+    """Fetch exact PubMed records (NCBI efetch) with per-record status and provenance.
+
+    Every field comes strictly from the NCBI response; missing fields are flagged and never inferred.
+    Returns records with 'status': 'success' and unretrieved items with 'status': 'not_found'.
+    """
+    base = fetch_abstracts(pmids)
+    prov = client.build_provenance("efetch", {"pmids": pmids})
+    records_with_status = [{**r, "status": "success"} for r in base.get("records", [])]
+    not_found_with_status = [{"pmid": p, "status": "not_found"} for p in base.get("not_found", [])]
+    return {
+        "requested": base["requested"],
+        "returned": base["returned"],
+        "records": records_with_status,
+        "not_found": base["not_found"],
+        "results_summary": records_with_status + not_found_with_status,
+        "provenance": prov,
+    }
 
 
 def main():

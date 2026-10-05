@@ -12,13 +12,23 @@ Or run without installing:
     uvx pubmed-access-mcp
 
 ## Tools
+
+### Provenance-First & Systematic Review Tools
 | Tool | Purpose |
 |---|---|
-| `search_pubmed(query, max_results=20, sort="relevance", date_from=None, date_to=None)` | Returns PMIDs, `total_matches`, and `query_translation` (how PubMed parsed your query; log it in your methods). |
-| `fetch_abstracts(pmids)` | Returns title, authors, journal, date, DOI, publication types, retraction-notice flag, abstract (section labels kept), URL, up to 200 PMIDs per call. |
+| `pubmed_search(query, max_results=20, start=0, sort="relevance", date_from=None, date_to=None, use_history=False)` | Search PubMed with a PRISMA-compliant reproducibility object (`original_query`, `effective_query`, `count`, `executed_at`), Entrez History tokens (`webenv`, `query_key`), and machine-verifiable provenance. |
+| `pubmed_fetch(pmids)` | Bulk-fetch PubMed records with audit provenance and explicit per-record status tracking (`success` vs `not_found`). |
+| `pubmed_database_info(db="pubmed")` | Query NCBI EInfo for database statistics (total records, last update timestamp) and search field tag definitions. |
+
+### Access & Retrieval Tools
+| Tool | Purpose |
+|---|---|
+| `search_pubmed(...)` | Legacy/minimal search; returns PMIDs, `total_matches`, and `query_translation`. |
+| `fetch_abstracts(pmids)` | Returns title, authors, journal, date, DOI, PMCID, publication types, retraction-notice flag, abstract (section labels kept), URL, up to 200 PMIDs per call. |
 | `search_with_access(query, max_results<=100, ...)` | Search, then list each hit as open-access PDF / landing page only / no open access found / unchecked. |
-| `check_access(pmids)` | Same classification for given PMIDs. |
+| `check_access(pmids)` | Same classification for given PMIDs via Unpaywall & PubMed Central. |
 | `download_pdfs(pmids, folder=None)` | Saves open-access PDFs as PMID<id>.pdf; paywalled papers are skipped, never bypassed. |
+
 
 ## Guarantees
 - Missing field => literal `Data not provided in PubMed abstract`. Nothing is inferred or paraphrased.
