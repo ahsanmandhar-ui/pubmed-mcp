@@ -54,7 +54,7 @@ log = logging.getLogger("pubmed-mcp")
 EUTILS = ncbi_client.EUTILS_BASE
 SERVER_VERSION = ncbi_client.SERVER_VERSION
 MISSING = "Data not provided in PubMed abstract"
-MAX_SEARCH = 200
+MAX_SEARCH = 9999
 MAX_FETCH = 200
 PMID_RE = re.compile(r"^\d{1,9}$")
 
@@ -279,7 +279,7 @@ def search_pubmed(query: str, max_results: int = 20, sort: str = "relevance",
     Args:
       query: PubMed query; supports field tags, MeSH and Boolean, e.g.
              '"hypertrophic cardiomyopathy"[MeSH] AND mavacamten[tiab] AND randomized controlled trial[pt]'.
-      max_results: 1-200 (default 20). `total_matches` reports the full hit count.
+      max_results: 1-9999 (default 20). `total_matches` reports the full hit count.
       sort: 'relevance' or 'pub_date' (newest first).
       date_from / date_to: optional publication-year bounds (e.g. 2018, 2025).
     Returns pmids, total_matches and query_translation (how PubMed interpreted the query; log it for reproducibility).
@@ -428,11 +428,15 @@ def pubmed_search(
 
     Args:
       query: PubMed query; supports field tags, MeSH, and Boolean logic.
-      max_results: 1-200 (default 20).
+      max_results: 1-9999 (default 20). Capped at MAX_SEARCH (9999).
       start: Result offset / retstart for pagination (default 0).
       sort: 'relevance' or 'pub_date' (newest first).
       date_from / date_to: Optional publication-year bounds.
       use_history: If True, stores search on NCBI Entrez History server (returns webenv & query_key).
+
+    To retrieve all records when total_matches > max_results:
+      1. Call pubmed_search(..., use_history=True, max_results=200 or higher)
+      2. Call pubmed_batch_fetch(webenv=..., query_key=..., total_records=total_matches, batch_size=200)
     """
     q = (query or "").strip()
     if not q:

@@ -47,7 +47,7 @@ def test_search_uses_ncbi_fields_only():
         def json(self): return {"esearchresult": {"count": "57", "idlist": ["1", "2"], "querytranslation": "x[All Fields]"}}
     s._request = lambda *a, **k: R()
     out = s.search_pubmed("x", max_results=999)
-    assert out["total_matches"] == 57 and out["pmids"] == ["1", "2"] and out["max_results_applied"] == 200
+    assert out["total_matches"] == 57 and out["pmids"] == ["1", "2"] and out["max_results_applied"] == 999
 
 def test_placeholder_key_ignored():
     os.environ["NCBI_API_KEY"] = "YOUR_OPTIONAL_FREE_KEY"
