@@ -1,15 +1,22 @@
-# pubmed-mcp
+<p align="center">
+  <img src="docs/images/pubmed-mcp-logo.svg" alt="pubmed-mcp logo" width="140"/>
+</p>
 
-Minimal MCP server that talks to PubMed through NCBI E-utilities.  
-It returns exactly what NCBI sends back. Missing fields are marked, never filled in.  
-Built for people doing evidence synthesis and systematic reviews who need to know the data is clean.
+<h1 align="center">pubmed-mcp</h1>
 
-**Package:** `pubmed-access-mcp` · **License:** Apache-2.0 · **Python:** ≥3.10
+<p align="center">
+  <strong>Minimal MCP server for PubMed</strong><br/>
+  Returns exactly what NCBI returns. Missing fields are flagged, never filled in.<br/>
+  Built for evidence synthesis and systematic reviews.
+</p>
 
-[![PyPI](https://img.shields.io/pypi/v/pubmed-access-mcp)](https://pypi.org/project/pubmed-access-mcp/)
-[![Python](https://img.shields.io/pypi/pyversions/pubmed-access-mcp)](https://pypi.org/project/pubmed-access-mcp/)
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
-[![MCP](https://img.shields.io/badge/MCP-compatible-green)](https://modelcontextprotocol.io)
+<p align="center">
+  <a href="https://pypi.org/project/pubmed-access-mcp/"><img src="https://img.shields.io/pypi/v/pubmed-access-mcp" alt="PyPI"/></a>
+  <a href="https://pypi.org/project/pubmed-access-mcp/"><img src="https://img.shields.io/pypi/pyversions/pubmed-access-mcp" alt="Python"/></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License"/></a>
+  <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-compatible-green" alt="MCP"/></a>
+  <a href="https://github.com/ahsanmandhar-ui/pubmed-mcp/actions"><img src="https://img.shields.io/github/actions/workflow/status/ahsanmandhar-ui/pubmed-mcp/test.yml?label=tests" alt="Tests"/></a>
+</p>
 
 ---
 
@@ -18,6 +25,80 @@ Built for people doing evidence synthesis and systematic reviews who need to kno
 Most PubMed wrappers either invent missing metadata or bury the original NCBI response.  
 This one does neither. Every field comes from the source. If PubMed left something out, you see it.  
 That makes the output usable in PRISMA workflows and audit trails.
+
+---
+
+## Architecture
+
+```mermaid
+flowchart TB
+    subgraph Client["MCP Clients"]
+        A[Claude Desktop]
+        B[Cursor / Antigravity]
+        C[OpenCode]
+        D[Any MCP client]
+    end
+
+    subgraph Server["pubmed-mcp"]
+        direction TB
+        T1[pubmed_search]
+        T2[pubmed_get]
+        T3[pubmed_fetch / batch_fetch]
+        T4[check_access / download_pdfs]
+        T5[pubmed_database_info]
+        
+        NC[ncbi_client.py<br/>rate-limit · retry · provenance]
+        ACC[access.py<br/>Unpaywall + PMC]
+    end
+
+    subgraph NCBI["NCBI E-utilities"]
+        ES[esearch.fcgi]
+        EF[efetch.fcgi]
+        EI[einfo.fcgi]
+    end
+
+    subgraph External["Open Access"]
+        UP[Unpaywall]
+        PMC[PubMed Central]
+    end
+
+    Client --> Server
+    T1 & T2 & T3 & T5 --> NC
+    T4 --> ACC
+    NC --> NCBI
+    ACC --> UP
+    ACC --> PMC
+
+    style Client fill:#e0f2fe,stroke:#0284c7
+    style Server fill:#f0fdfa,stroke:#0d9488
+    style NCBI fill:#fef3c7,stroke:#d97706
+    style External fill:#fce7f3,stroke:#db2777
+```
+
+### Data flow (search → records)
+
+```mermaid
+flowchart LR
+    Q[User Query] --> S[pubmed_search]
+    S --> H{use_history?}
+    H -->|yes| WH[WebEnv + QueryKey]
+    H -->|no| PMIDs[PMID list]
+    
+    WH --> BF[pubmed_batch_fetch]
+    PMIDs --> BF
+    PMIDs --> GET[pubmed_get]
+    
+    BF --> NORM[Normalized records<br/>+ missingness flags]
+    GET --> NORM
+    
+    NORM --> PROV[Provenance block]
+    NORM --> RET[Retraction / Erratum flags]
+    
+    style Q fill:#e0f2fe
+    style NORM fill:#ccfbf1
+    style PROV fill:#fef3c7
+    style RET fill:#fee2e2
+```
 
 ---
 
