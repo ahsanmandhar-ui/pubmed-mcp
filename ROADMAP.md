@@ -85,36 +85,36 @@ Strengthen the existing open-access path:
 
 ---
 
-## Phase 4 — Differentiation (CURRENT)
+## Phase 4 — Differentiation ✅ DONE
 
 **Goal:** Expand coverage beyond PubMed while keeping provenance and anti-inference intact.
 
-### 4.1 Europe PMC adapter (P1)
+### 4.1 Europe PMC adapter ✅ DONE
 - New client module for Europe PMC REST API (`europe_pmc.py`)
 - Map Europe PMC records into the same normalized + provenance schema used for PubMed
 - Preserve original source (`Europe PMC`) and identifiers (PMID, PMCID, DOI, Europe PMC ID)
 - Rate-limit and error handling consistent with ncbi_client
 - Tools: `europe_pmc_search`, `europe_pmc_get`
 
-### 4.2 Cross-source deduplication (P1)
+### 4.2 Cross-source deduplication ✅ DONE
 - Deduplicate on PMID → DOI → PMCID → careful title+first-author+year fallback
 - Every merged record must declare which sources contributed and which identifier won
 - Never silently drop a record; emit a conflict / review list when matches are ambiguous
 - Module: `dedupe.py`; Tool: `pubmed_deduplicate`
 
-### 4.3 Citation chasing (P1)
+### 4.3 Citation chasing ✅ DONE
 - Retrieve reference lists and citing articles where the source supports it (Europe PMC has good support)
 - Record coverage notes: "references available", "citing articles available", "not supported by this source"
 - Attach retrieval timestamp and source to every chased record
 - Module: `citations.py`; Tool: `pubmed_citation_chase` (stub that records coverage notes; never invents citations)
 
-### 4.4 Retraction / correction monitoring (P1)
+### 4.4 Retraction / correction monitoring ✅ DONE
 - Strengthen existing retraction/erratum detection (`has_retraction_notice`, `has_erratum_notice`, `comments_corrections`)
 - New tool to re-check a saved list of PMIDs (or a snapshot) for new retraction / expression-of-concern / correction notices
 - Distinguish "verified no notice" from "not yet checked"
 - Module: `retraction.py`; Tool: `pubmed_retraction_check`
 
-### Deliverables for this phase
+### Deliverables for this phase ✅ DONE
 - `europe_pmc.py` — client + normalizer
 - `dedupe.py` — identifier-based + conservative bibliographic deduplication
 - `citations.py` — reference / citing-article helpers
@@ -122,6 +122,25 @@ Strengthen the existing open-access path:
 - Tools: `europe_pmc_search`, `europe_pmc_get`, `pubmed_deduplicate`, `pubmed_citation_chase`, `pubmed_retraction_check`
 - Offline tests with synthetic multi-source fixtures
 - Updated ROADMAP + DEVELOPMENT_STATE
+
+---
+
+## Phase 5 — Offline Evaluation & Regression Benchmark ⏳ CURRENT
+
+**Goal:** Add an offline evaluation & regression benchmark that guards the anti-inference guarantee.
+
+### Rules (strict)
+- A field is only `directly_sourced` if the value came from the source input
+- Never mark a field `directly_sourced` if it was inferred, guessed, or defaulted
+- `false_inference_count` must stay 0 — never allow it to be > 0
+- Absence of data is never evidence of absence
+
+### Deliverables
+- `benchmark.py` — core benchmark module with `run_benchmark()`, `validate_record()`, module-level `false_inference_count`
+- Tool: `pubmed_validate` — validates a normalized record against its raw source input for inference violations
+- Offline tests: `tests/test_benchmark.py`
+- Updated ROADMAP + DEVELOPMENT_STATE
+- `false_inference_count == 0` and 0 test failures on full offline suite
 
 ---
 

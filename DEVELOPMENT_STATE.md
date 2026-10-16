@@ -28,7 +28,8 @@ pubmed-mcp
   |       pubmed_export_ris, pubmed_export_bibtex, pubmed_export_csv, pubmed_export_json,
   |       pubmed_evidence_table,
   |       europe_pmc_search, europe_pmc_get,
-  |       pubmed_deduplicate, pubmed_citation_chase, pubmed_retraction_check
+  |       pubmed_deduplicate, pubmed_citation_chase, pubmed_retraction_check,
+      pubmed_validate
   |     - Legacy Compatibility: search_pubmed, fetch_abstracts, check_access,
   |       search_with_access, download_pdfs
   |
@@ -101,6 +102,7 @@ NCBI E-utilities (https://eutils.ncbi.nlm.nih.gov/entrez/eutils)
 ├── dedupe.py               # Phase 4: Cross-source deduplication
 ├── citations.py            # Phase 4: Citation chasing helpers
 ├── retraction.py           # Phase 4: Retraction / correction monitoring helpers
+├── benchmark.py            # Phase 5: Offline evaluation & regression benchmark
 ├── audit.py                # Phase 2: Download / access audit trail helpers
 ├── tests/
 │   ├── test_access.py     # Offline synthetic tests for access detection and PDF safety
@@ -112,7 +114,8 @@ NCBI E-utilities (https://eutils.ncbi.nlm.nih.gov/entrez/eutils)
 │   ├── test_audit.py      # Phase 2: offline audit helper tests
 │   ├── test_evidence.py   # Phase 3: offline evidence table tests
 │   ├── test_dedupe.py     # Phase 4: offline deduplication tests
-│   └── test_retraction.py # Phase 4: offline retraction monitoring tests
+│   ├── test_retraction.py # Phase 4: offline retraction monitoring tests
+│   └── test_benchmark.py  # Phase 5: offline benchmark / regression tests
 ```
 
 ## 5. MCP Surface
@@ -345,6 +348,7 @@ uvx pubmed-access-mcp
 .venv/Scripts/python tests/test_evidence.py
 .venv/Scripts/python tests/test_dedupe.py
 .venv/Scripts/python tests/test_retraction.py
+.venv/Scripts/python tests/test_benchmark.py
 
 # Or via unittest discovery
 .venv/Scripts/python -m unittest discover tests
@@ -352,28 +356,26 @@ uvx pubmed-access-mcp
 
 ## 25. Last Verified
 - **Date:** 2026-10-17
-- **Git commit:** feature/phase4-europepmc-dedupe (Phase 4 Europe PMC, dedupe, citation chase, retraction monitoring)
-- **Tests:** 47 pre-existing + 4 Phase 3 + 6 new Phase 4 tests, 0 failed (offline synthetic test suite across all 10 test modules)
-- **Build:** Not yet built (pending Phase 4 commit)
+- **Git commit:** feature/phase5-benchmark (Phase 5 offline evaluation & regression benchmark)
+- **Tests:** 47 pre-existing + 4 Phase 3 + 6 new Phase 4 + 11 new Phase 5 tests, 0 failed (offline synthetic test suite across all 11 test modules)
+- **Build:** Not yet built (pending Phase 5 commit)
 - **Lint:** Clean syntax
 - **Typecheck:** Clean execution
+- **false_inference_count:** 0 (anti-inference guarantee holds)
 - **Files Changed in Session:**
-  - `server.py` (NEW: europe_pmc_search, europe_pmc_get, pubmed_deduplicate, pubmed_citation_chase, pubmed_retraction_check tools; imports europe_pmc, dedupe, citations, retraction)
-  - `europe_pmc.py` (NEW: Phase 4 Europe PMC client + normalize_epmc_record; provenance-aware schema, source "Europe PMC")
-  - `dedupe.py` (NEW: Phase 4 cross-source deduplication on PMID → DOI → PMCID → title+author+year; ambiguous matches to review list)
-  - `citations.py` (NEW: Phase 4 citation-chase stub with coverage notes; never invents citations)
-  - `retraction.py` (NEW: Phase 4 retraction / correction monitoring helpers with checked_at audit trail)
-  - `tests/test_dedupe.py` (NEW: offline deduplication tests)
-  - `tests/test_retraction.py` (NEW: offline retraction monitoring tests)
-  - `pyproject.toml` (added europe_pmc, dedupe, citations, retraction to py-modules)
-  - `ROADMAP.md` (Phase 3 marked DONE; Phase 4 marked CURRENT with 4.1–4.4 deliverables)
-  - `DEVELOPMENT_STATE.md` (added Phase 4 tools to Target Tools + Target Tool Evolution, new modules + tests in structure)
+  - `server.py` (NEW: pubmed_validate tool; imports benchmark)
+  - `benchmark.py` (NEW: Phase 5 offline evaluation & regression benchmark module with run_benchmark(), validate_record(), module-level false_inference_count)
+  - `tests/test_benchmark.py` (NEW: 11 offline benchmark / regression tests)
+  - `pyproject.toml` (added benchmark to py-modules)
+  - `ROADMAP.md` (Phase 4 marked DONE; Phase 5 added as CURRENT)
+  - `DEVELOPMENT_STATE.md` (added pubmed_validate to Target Tools, benchmark.py + test_benchmark.py to structure, updated Last Verified)
+  - `CLINE_PHASE5.md` (NEW: Phase 5 instruction document)
 
 ## 26. EXACT NEXT TASK
-1. Commit Phase 4 changes on `feature/phase4-europepmc-dedupe` and push to origin.
-2. Fast-forward merge into `main` (feature branch → ff-merge → delete, following the Phase 3 merge pattern).
-3. Run the full offline test suite on `main` (all previous + new tests must pass).
-4. (Optional) Next: implement `pubmed_validate` tool per the remaining roadmap.
+1. Commit Phase 5 changes on `feature/phase5-benchmark` and push to origin.
+2. Fast-forward merge into `main` (feature branch → ff-merge → delete, following the Phase 3/4 merge pattern).
+3. Run the full offline test suite on `main` (all previous + new tests must pass; false_inference_count == 0).
+4. Run final confirmation per CLINE_PHASE5.md.
 
 ## 27. SESSION HANDOFF
 Next agent should:

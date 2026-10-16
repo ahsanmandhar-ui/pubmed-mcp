@@ -42,6 +42,7 @@ import europe_pmc
 import dedupe
 import citations
 import retraction
+import benchmark
 try:  # mcp 1.x
     from mcp.server.fastmcp import FastMCP
 except ModuleNotFoundError:  # mcp 2.x renamed FastMCP -> MCPServer
@@ -1099,6 +1100,38 @@ def pubmed_retraction_check(
             "'not yet checked', not as 'clean'."
         )
     return summary
+
+
+# ----------------------------------------------------------------- Phase 5: Offline evaluation & regression benchmark
+
+@mcp.tool()
+def pubmed_validate(
+    record: Dict[str, Any],
+    source_input: Dict[str, Any],
+    record_name: str = "unnamed",
+) -> dict:
+    """
+    Validate a normalized record against its raw source input for inference violations.
+
+    A field marked `directly_sourced` must have its value present in the source input.
+    Any mismatch is reported as a false inference. This enforces the anti-inference
+    guarantee: absence of data is never evidence of absence, and nothing is ever
+    inferred, guessed, or fabricated.
+
+    Args:
+        record: Normalized record with provenance-style field entries (value + status).
+        source_input: The raw source data the record was derived from.
+        record_name: Optional name for the record being validated (for reporting).
+
+    Returns:
+        dict with `valid` (bool), `false_inference_count` (int), `violations` (list),
+        and `record_name` (str).
+    """
+    return benchmark.validate_record(
+        record=record,
+        source_input=source_input,
+        record_name=record_name,
+    )
 
 
 def main():
