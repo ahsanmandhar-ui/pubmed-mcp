@@ -5,7 +5,7 @@
 <h1 align="center">pubmed-mcp</h1>
 
 <p align="center">
-  <strong>Research Guidelines Adjusted</strong><br/>
+  <strong>Minimal MCP server for PubMed</strong><br/>
   Returns exactly what NCBI returns. Missing fields are flagged, never filled in.<br/>
   Built for evidence synthesis and systematic reviews.
 </p>
@@ -47,8 +47,8 @@ flowchart TB
         T4[check_access / download_pdfs]
         T5[pubmed_database_info]
         
-        NC[ncbi_client.py<br/>rate-limit · retry · provenance]
-        ACC[access.py<br/>Unpaywall + PMC]
+        NC["ncbi_client.py<br/>rate-limit · retry · provenance"]
+        ACC["access.py<br/>Unpaywall + PMC"]
     end
 
     subgraph NCBI["NCBI E-utilities"]
@@ -88,12 +88,12 @@ flowchart LR
     PMIDs --> BF
     PMIDs --> GET[pubmed_get]
     
-    BF --> NORM[Normalized records<br/>+ missingness flags]
+    BF --> NORM["Normalized records<br/>+ missingness flags"]
     GET --> NORM
     
     NORM --> PROV[Provenance block]
     NORM --> RET[Retraction / Erratum flags]
-    
+
     style Q fill:#e0f2fe
     style NORM fill:#ccfbf1
     style PROV fill:#fef3c7
@@ -146,6 +146,12 @@ uvx pubmed-access-mcp
 - `publication_types` is NCBI’s own tag. No evidence grading (CEBM/GRADE) is added.
 - Retraction flag is true only when NCBI itself lists a `RetractionIn` link.
 - Rate limits are respected (3 req/s anonymous, 10 with API key) with exponential backoff.
+
+**What this is not**
+- No full-text extraction beyond legally open PDFs
+- No evidence-level grading
+- No paywall bypass
+- No silent enrichment from other databases
 
 ---
 
