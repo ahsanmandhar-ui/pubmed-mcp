@@ -33,6 +33,8 @@ from typing import List, Optional
 import requests
 import access
 import ncbi_client
+import provenance as prov
+import snapshots
 try:  # mcp 1.x
     from mcp.server.fastmcp import FastMCP
 except ModuleNotFoundError:  # mcp 2.x renamed FastMCP -> MCPServer
@@ -145,7 +147,13 @@ def parse_article(node: ET.Element) -> dict:
 
 
 def normalize_article(node: ET.Element) -> dict:
-    """Normalize a PubmedArticle XML node into a strict schema with structured missingness indicators."""
+    """Normalize a PubmedArticle XML node into a strict schema with structured missingness indicators.
+
+    Every NCBI-sourced field is emitted via provenance.field() so each value carries an
+    explicit status (directly_sourced / transformed / unavailable / not_returned_by_ncbi /
+    parse_error / not_applicable). No value is ever invented: fields NCBI did not provide
+    are flagged not_returned_by_ncbi, never guessed or paraphrased.
+    """
     cit = node.find("MedlineCitation")
     art = cit.find("Article") if cit is not None else None
     if cit is None or art is None:
@@ -153,16 +161,32 @@ def normalize_article(node: ET.Element) -> dict:
     pmid = (cit.findtext("PMID") or "").strip()
 
     title_val = _text(art.find("ArticleTitle"))
-    title = {"value": title_val, "status": "available"} if title_val != MISSING else {"value": None, "status": "missing"}
+    title = prov.field(
+        None if title_val == MISSING else title_val,
+        prov.STATUS_NOT_RETURNED if title_val == MISSING else prov.STATUS_DIRECTLY_SOURCED,
+        pmid=pmid or None,
+    )
 
     authors_val = _authors(art)
-    authors = {"value": authors_val, "status": "available"} if authors_val != MISSING else {"value": [], "status": "missing"}
+    authors = prov.field(
+        authors_val if authors_val != MISSING else [],
+        prov.STATUS_DIRECTLY_SOURCED if authors_val != MISSING else prov.STATUS_NOT_RETURNED,
+        pmid=pmid or None,
+    )
 
     journal_val = _text(art.find("Journal/Title"))
-    journal = {"value": journal_val, "status": "available"} if journal_val != MISSING else {"value": None, "status": "missing"}
+    journal = prov.field(
+        None if journal_val == MISSING else journal_val,
+        prov.STATUS_NOT_RETURNED if journal_val == MISSING else prov.STATUS_DIRECTLY_SOURCED,
+        pmid=pmid or None,
+    )
 
     pub_date_val = _pub_date(art)
-    pub_date = {"value": pub_date_val, "status": "available"} if pub_date_val != MISSING else {"value": None, "status": "missing"}
+    pub_date = prov.field(
+        None if pub_date_val == MISSING else pub_date_val,
+        prov.STATUS_NOT_RETURNED if pub_date_val == MISSING else prov.STATUS_DIRECTLY_SOURCED,
+        pmid=pmid or None,
+    )
 
     doi_val, pmcid_val = None, None
     for aid in node.findall("PubmedData/ArticleIdList/ArticleId"):
@@ -171,14 +195,30 @@ def normalize_article(node: ET.Element) -> dict:
         elif aid.get("IdType") == "pmc" and (aid.text or "").strip():
             pmcid_val = aid.text.strip()
 
-    doi = {"value": doi_val, "status": "available"} if doi_val else {"value": None, "status": "not_returned_by_ncbi"}
-    pmcid = {"value": pmcid_val, "status": "available"} if pmcid_val else {"value": None, "status": "not_returned_by_ncbi"}
+    doi = prov.field(
+        doi_val,
+        prov.STATUS_DIRECTLY_SOURCED if doi_val else prov.STATUS_NOT_RETURNED,
+        pmid=pmid or None,
+    )
+    pmcid = prov.field(
+        pmcid_val,
+        prov.STATUS_DIRECTLY_SOURCED if pmcid_val else prov.STATUS_NOT_RETURNED,
+        pmid=pmid or None,
+    )
 
     ptypes = [t.text.strip() for t in art.findall("PublicationTypeList/PublicationType") if t.text and t.text.strip()]
-    publication_types = {"value": ptypes, "status": "available"} if ptypes else {"value": [], "status": "not_returned_by_ncbi"}
+    publication_types = prov.field(
+        ptypes if ptypes else [],
+        prov.STATUS_DIRECTLY_SOURCED if ptypes else prov.STATUS_NOT_RETURNED,
+        pmid=pmid or None,
+    )
 
     abstract_val = _abstract(art)
-    abstract = {"value": abstract_val, "status": "available"} if abstract_val != MISSING else {"value": None, "status": "missing"}
+    abstract = prov.field(
+        None if abstract_val == MISSING else abstract_val,
+        prov.STATUS_NOT_RETURNED if abstract_val == MISSING else prov.STATUS_DIRECTLY_SOURCED,
+        pmid=pmid or None,
+    )
 
     comments_corrections = []
     has_retraction = False
@@ -749,6 +789,74 @@ def pubmed_batch_fetch(
         "not_found": all_not_found,
         "results_summary": results_summary,
         "provenance": overall_prov,
+    }
+
+
+# ----------------------------------------------------------------- search snapshots (Phase 1)
+@mcp.tool()
+def pubmed_create_search_snapshot(
+    original_query: str,
+    effective_query: str,
+    total_matches: int,
+    pmids: List[str],
+    retmax: int = 20,
+    sort: str = "relevance",
+    date_from: Optional[int] = None,
+    date_to: Optional[int] = None,
+    webenv: Optional[str] = None,
+    query_key: Optional[str] = None,
+    response_hash: Optional[str] = None,
+) -> dict:
+    """Create a reproducible search snapshot (PUBMED-YYYYMMDD-XXXXXX).
+
+    Thin wrapper around the in-memory SnapshotStore. Stores exactly what NCBI
+    returned; never invents results. Snapshots live for the lifetime of the
+    MCP server process (Phase 1).
+    """
+    return snapshots.store.create(
+        original_query=original_query,
+        effective_query=effective_query,
+        total_matches=total_matches,
+        pmids=pmids,
+        retmax=retmax,
+        sort=sort,
+        date_from=date_from,
+        date_to=date_to,
+        webenv=webenv,
+        query_key=query_key,
+        response_hash=response_hash,
+    )
+
+
+@mcp.tool()
+def pubmed_get_snapshot(snapshot_id: str) -> dict:
+    """Retrieve a previously created search snapshot by its stable ID."""
+    snap = snapshots.store.get(snapshot_id)
+    if snap is None:
+        return {
+            "error": "snapshot_not_found",
+            "snapshot_id": snapshot_id,
+            "message": "No snapshot exists with that ID in the current process.",
+        }
+    return snap
+
+
+@mcp.tool()
+def pubmed_list_snapshots(limit: int = 20) -> dict:
+    """List the most recent search snapshots (newest first)."""
+    items = snapshots.store.list(limit=limit)
+    return {
+        "count": len(items),
+        "snapshots": [
+            {
+                "snapshot_id": s["snapshot_id"],
+                "created_at": s["created_at"],
+                "original_query": s["original_query"],
+                "total_matches": s["total_matches"],
+                "returned_count": s["returned_count"],
+            }
+            for s in items
+        ],
     }
 
 

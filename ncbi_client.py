@@ -26,7 +26,7 @@ logger = logging.getLogger("pubmed-mcp.client")
 
 EUTILS_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 DEFAULT_TOOL_NAME = "pubmed-access-mcp"
-SERVER_VERSION = "0.2.0"
+SERVER_VERSION = "0.3.0-dev"
 SCHEMA_VERSION = "1.0"
 
 

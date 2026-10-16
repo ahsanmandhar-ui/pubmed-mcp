@@ -4,8 +4,8 @@
 - **Name:** pubmed-access-mcp (Repository: ahsanmandhar-ui/pubmed-mcp)
 - **Repository:** https://github.com/ahsanmandhar-ui/pubmed-mcp
 - **Purpose:** Minimal, auditable, provenance-first Model Context Protocol (MCP) server for PubMed via NCBI E-utilities, specifically optimized for evidence synthesis, systematic reviews, and reproducible medical/scientific research.
-- **Current version:** 0.2.0
-- **Schema version:** 1.0
+- **Current version:** 0.3.0-dev
+- **Schema version:** 1.1
 
 ## 2. Product Thesis
 - **Core Principle:** NCBI → retrieval → deterministic normalization → provenance.
@@ -23,7 +23,8 @@ pubmed-mcp
   |
   +-- MCP Tool Layer (server.py)
   |     - Target Tools: pubmed_search, pubmed_get, pubmed_fetch,
-  |       pubmed_batch_fetch, pubmed_validate, pubmed_search_audit, pubmed_database_info
+  |       pubmed_batch_fetch, pubmed_database_info,
+  |       pubmed_create_search_snapshot, pubmed_get_snapshot, pubmed_list_snapshots
   |     - Legacy Compatibility: search_pubmed, fetch_abstracts, check_access,
   |       search_with_access, download_pdfs
   |
@@ -41,6 +42,10 @@ pubmed-mcp
   +-- Provenance Layer (provenance.py)
   |     - Structured metadata: provider, database, utility, timestamp, request_parameters, server_version
   |     - Zero secret leakage (sanitizes API keys and authorization tokens)
+  |     - Field-level ledger entries via field(): value + status + source + pmid + retrieved_at
+  +-- Snapshot Store (snapshots.py)
+  |     - In-memory systematic-search snapshots: PUBMED-YYYYMMDD-XXXXXX IDs
+  |     - Thread-safe create / get / list; process lifetime (Phase 1)
   |
   +-- Missingness Layer
   |     - Distinguishes: available, missing, not_returned_by_ncbi, not_requested, not_applicable, parse_error
@@ -290,30 +295,39 @@ uvx pubmed-access-mcp
 .venv/Scripts/python tests/test_server.py
 .venv/Scripts/python tests/test_access.py
 .venv/Scripts/python tests/test_client.py
+.venv/Scripts/python tests/test_provenance.py
+.venv/Scripts/python tests/test_snapshots.py
 
 # Or via unittest discovery
 .venv/Scripts/python -m unittest discover tests
 ```
 
 ## 25. Last Verified
-- **Date:** 2026-10-05
-- **Git commit:** Working tree updated
-- **Tests:** 32 passed, 0 failed (offline synthetic test suite across all 3 test modules)
+- **Date:** 2026-10-17
+- **Git commit:** Working tree updated (feature/phase1-provenance-snapshots)
+- **Tests:** 41 passed, 0 failed (offline synthetic test suite across all 5 test modules)
 - **Build:** Built successfully (wheel and sdist for pubmed-access-mcp 0.2.0)
 - **Lint:** Clean syntax
 - **Typecheck:** Clean execution
 - **Files Changed in Session:**
-  - `server.py` (Implemented pubmed_batch_fetch tool, exposed SERVER_VERSION)
-  - `ncbi_client.py` (Bumped SERVER_VERSION to 0.2.0, made pmids optional in efetch)
-  - `pyproject.toml` (Bumped version to 0.2.0)
-  - `README.md` (Documented pubmed_batch_fetch in tools table)
-  - `DEVELOPMENT_STATE.md` (Updated completed items, roadmap, test counts, version 0.2.0)
-  - `tests/test_client.py` (Added TestPubmedBatchFetch with 6 new tests covering chunking, history pagination, missing IDs, error resilience, and validation)
+  - `server.py` (Registered pubmed_create_search_snapshot / pubmed_get_snapshot / pubmed_list_snapshots; normalize_article now emits every field via provenance.field())
+  - `provenance.py` (NEW: Evidence Provenance Ledger — field(), make_record_provenance(), sanitize_params())
+  - `snapshots.py` (NEW: SnapshotStore — PUBMED-YYYYMMDD-XXXXXX IDs, create/get/list/delete)
+  - `tests/test_provenance.py` (NEW: offline provenance ledger tests)
+  - `tests/test_snapshots.py` (NEW: offline snapshot store tests)
+  - `tests/test_client.py` (Updated status assertions for provenance field statuses + server_version)
+  - `ncbi_client.py` (Bumped SERVER_VERSION to 0.3.0-dev)
+  - `pyproject.toml` (Bumped version to 0.3.0-dev; added provenance + snapshots modules)
+  - `ROADMAP.md` (NEW: Phase 1 roadmap from the Phase 1 pack)
+  - `docs/PROVENANCE_SCHEMA.md` (NEW)
+  - `docs/SEARCH_SNAPSHOTS.md` (NEW)
+  - `DEVELOPMENT_STATE.md` (Version 0.3.0-dev, schema 1.1, snapshot tools, test suite)
 
 ## 26. EXACT NEXT TASK
-1. Finalize PyPI release for `pubmed-access-mcp` v0.2.0.
-2. Implement search snapshot identifiers (`PUBMED-YYYYMMDD-XXXXXX`) and session preservation.
-3. Implement `pubmed_validate` tool (syntax, duplicate checking, MeSH validation).
+1. Commit Phase 1 changes on `feature/phase1-provenance-snapshots` and push to origin.
+2. Open a PR against `main` (or fast-forward merge if appropriate).
+3. (Optional) Finalize PyPI release for `pubmed-access-mcp` v0.3.0-dev.
+4. (Optional) Implement `pubmed_validate` tool (syntax, duplicate checking, MeSH validation).
 
 ## 27. SESSION HANDOFF
 Next agent should:
