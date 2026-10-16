@@ -37,6 +37,7 @@ import provenance as prov
 import snapshots
 import export
 import audit
+import evidence
 try:  # mcp 1.x
     from mcp.server.fastmcp import FastMCP
 except ModuleNotFoundError:  # mcp 2.x renamed FastMCP -> MCPServer
@@ -933,6 +934,39 @@ def pubmed_export_json(
     recs = _resolve_export_records(records, snapshot_id)
     text = export.to_json(recs)
     return {"format": "json", "record_count": len(recs), "content": text}
+
+
+# ----------------------------------------------------------------- structured evidence table (Phase 3)
+@mcp.tool()
+def pubmed_evidence_table(
+    records: Optional[List[Dict[str, Any]]] = None,
+    snapshot_id: Optional[str] = None,
+    format: str = "json",  # "json" | "csv"
+) -> dict:
+    """Build a source-linked evidence table from records or a search snapshot.
+
+    Provide either `records` or `snapshot_id`. When snapshot_id is given,
+    PMIDs are read from the snapshot store, records are fetched via
+    pubmed_fetch/fetch_abstracts, then the evidence table is built.
+
+    Only extracts what is explicitly present in title/abstract. Every cell
+    carries value + status (+ optional source quote). Never invents sample
+    size, study design, PICO elements, or effect estimates.
+    """
+    recs = _resolve_export_records(records, snapshot_id)
+    table = evidence.build_evidence_table(recs)
+    if format.lower() == "csv":
+        return {
+            "format": "csv",
+            "row_count": table["row_count"],
+            "content": evidence.evidence_table_to_csv(table),
+            "notes": table["notes"],
+        }
+    return {
+        "format": "json",
+        "row_count": table["row_count"],
+        "table": table,
+    }
 
 
 def main():

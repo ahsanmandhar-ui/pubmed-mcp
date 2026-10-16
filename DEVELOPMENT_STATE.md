@@ -25,7 +25,8 @@ pubmed-mcp
   |     - Target Tools: pubmed_search, pubmed_get, pubmed_fetch,
   |       pubmed_batch_fetch, pubmed_database_info,
   |       pubmed_create_search_snapshot, pubmed_get_snapshot, pubmed_list_snapshots,
-  |       pubmed_export_ris, pubmed_export_bibtex, pubmed_export_csv, pubmed_export_json
+  |       pubmed_export_ris, pubmed_export_bibtex, pubmed_export_csv, pubmed_export_json,
+  |       pubmed_evidence_table
   |     - Legacy Compatibility: search_pubmed, fetch_abstracts, check_access,
   |       search_with_access, download_pdfs
   |
@@ -33,6 +34,12 @@ pubmed-mcp
   |     - Bibliographic exporters: RIS, BibTeX, CSV, JSON
   |     - Accepts record list or snapshot_id (snapshot → fetch → export pipeline)
   |     - Never invents field values; tolerates legacy and provenance-style records
+  |
+  |   +-- Evidence Table Layer (evidence.py)
+  |     - Structured evidence table builder: build_evidence_row, build_evidence_table, evidence_table_to_csv
+  |     - MCP tool: pubmed_evidence_table(records | snapshot_id, format="json"|"csv")
+  |     - Every cell carries value + status + optional source quote
+  |     - Extracts only from title/abstract; never invents sample size, design, or PICO
   |
   |   +-- Download Audit Layer (audit.py)
   |     - Access/download audit entries: access_status, route, download_status,
@@ -87,6 +94,7 @@ NCBI E-utilities (https://eutils.ncbi.nlm.nih.gov/entrez/eutils)
 ├── provenance.py           # Phase 1: Evidence Provenance Ledger
 ├── snapshots.py            # Phase 1: Search Snapshots (PUBMED-YYYYMMDD-XXXXXX)
 ├── export.py               # Phase 2: Bibliographic exporters (RIS, BibTeX, CSV, JSON)
+├── evidence.py             # Phase 3: Structured evidence table builder
 ├── audit.py                # Phase 2: Download / access audit trail helpers
 ├── tests/
 │   ├── test_access.py     # Offline synthetic tests for access detection and PDF safety
@@ -95,7 +103,8 @@ NCBI E-utilities (https://eutils.ncbi.nlm.nih.gov/entrez/eutils)
 │   ├── test_provenance.py # Phase 1: offline provenance ledger tests
 │   ├── test_snapshots.py  # Phase 1: offline snapshot store tests
 │   ├── test_export.py     # Phase 2: offline exporter tests
-│   └── test_audit.py      # Phase 2: offline audit helper tests
+│   ├── test_audit.py      # Phase 2: offline audit helper tests
+│   └── test_evidence.py   # Phase 3: offline evidence table tests
 ```
 
 ## 5. MCP Surface
@@ -320,6 +329,7 @@ uvx pubmed-access-mcp
 .venv/Scripts/python tests/test_snapshots.py
 .venv/Scripts/python tests/test_export.py
 .venv/Scripts/python tests/test_audit.py
+.venv/Scripts/python tests/test_evidence.py
 
 # Or via unittest discovery
 .venv/Scripts/python -m unittest discover tests
@@ -327,28 +337,25 @@ uvx pubmed-access-mcp
 
 ## 25. Last Verified
 - **Date:** 2026-10-17
-- **Git commit:** feature/phase2-exports-audit (Phase 2 exports + audit trail)
-- **Tests:** 41 passed + 6 new Phase 2 tests, 0 failed (offline synthetic test suite across all 7 test modules)
+- **Git commit:** feature/phase3-evidence-tables (Phase 3 evidence tables)
+- **Tests:** 47 passed + 4 new Phase 3 tests, 0 failed (offline synthetic test suite across all 8 test modules)
 - **Build:** Built successfully (wheel and sdist for pubmed-access-mcp 0.3.0-dev)
 - **Lint:** Clean syntax
 - **Typecheck:** Clean execution
 - **Files Changed in Session:**
-  - `server.py` (NEW: pubmed_export_ris, pubmed_export_bibtex, pubmed_export_csv, pubmed_export_json tools + _resolve_export_records helper; imports export + audit)
-  - `access.py` (download_many now produces audit entries: access_status, route, download_status, file_path, checksum_sha256 via audit.make_access_audit)
-  - `export.py` (NEW: Phase 2 bibliographic exporters — to_ris, to_bibtex, to_csv, to_json; tolerates legacy + provenance-style records; never invents values)
-  - `audit.py` (NEW: Phase 2 download audit — make_access_audit, sha256_file, summarize_audit; status/route constants)
-  - `tests/test_export.py` (NEW: offline exporter tests for RIS/BibTeX/CSV/JSON)
-  - `tests/test_audit.py` (NEW: offline audit helper tests)
-  - `pyproject.toml` (added export + audit modules to py-modules)
-  - `ROADMAP.md` (updated to Phase 1 + Phase 2 roadmap)
-  - `DEVELOPMENT_STATE.md` (added export tools, audit layer, new test files, Phase 2 surface)
+  - `server.py` (NEW: pubmed_evidence_table tool + import evidence; reuses _resolve_export_records snapshot→fetch pattern)
+  - `evidence.py` (NEW: Phase 3 evidence table builder — build_evidence_row, build_evidence_table, evidence_table_to_csv; cell shape value/status/source_quote)
+  - `tests/test_evidence.py` (NEW: offline evidence table tests)
+  - `pyproject.toml` (added evidence module to py-modules)
+  - `ROADMAP.md` (Phase 2 marked DONE; Phase 3 marked CURRENT with full deliverables + columns)
+  - `DEVELOPMENT_STATE.md` (added evidence table layer, pubmed_evidence_table tool, new test file)
 
 ## 26. EXACT NEXT TASK
-1. Commit Phase 2 changes on `feature/phase2-exports-audit` and push to origin.
-2. Open a PR against `main` (or fast-forward merge if appropriate, following CLINE_MERGE_PHASE1.md local-merge fallback).
+1. Commit Phase 3 changes on `feature/phase3-evidence-tables` and push to origin.
+2. Open a PR against `main` (or fast-forward merge if appropriate, following CLINE_MERGE_PHASE2.md local-merge fallback).
 3. (Optional) Finalize PyPI release for `pubmed-access-mcp` v0.3.0-dev.
 4. (Optional) Implement `pubmed_validate` tool per DEVELOPMENT_STATE.md next-task list.
 
 ## 27. SESSION HANDOFF
 Next agent should:
-Review `DEVELOPMENT_STATE.md`, inspect Section 26, and proceed with commit/push of Phase 2 branch, then consider `pubmed_validate` tool implementation.
+Review `DEVELOPMENT_STATE.md`, inspect Section 26, and proceed with commit/push of Phase 3 branch, then consider `pubmed_validate` tool implementation.

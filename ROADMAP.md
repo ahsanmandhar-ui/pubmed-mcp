@@ -15,7 +15,7 @@
 
 ---
 
-## Phase 2 — Research Workflow (CURRENT)
+## Phase 2 — Research Workflow ✅ DONE
 
 ### 2.1 Bibliographic Exports (P0)
 Clean, standards-compliant exporters:
@@ -48,10 +48,55 @@ Strengthen the existing open-access path:
 
 ---
 
-## Phase 3 — Structured Evidence Tables (source-linked only)
-- Extract only what is explicitly present
-- Every cell carries source location + extraction status
-- Distinguish `not reported` / `not retrieved` / `not applicable`
+## Phase 3 — Structured Evidence Tables (CURRENT)
+
+**Goal:** Produce source-linked evidence tables that a human reviewer can trust.
+
+### Rules (strict)
+- Extract **only** what is explicitly present in the retrieved text (title, abstract, publication types, etc.).
+- Every cell must carry:
+  - the extracted value (or null)
+  - extraction status: `extracted` | `not_reported` | `not_retrieved` | `not_applicable` | `parse_error`
+  - source location / quote when available
+- Never invent sample size, effect estimates, study design labels, or PICO elements that are not clearly stated.
+- Distinguish clearly between "the paper did not report it" and "we did not retrieve the full text".
+
+### Deliverables
+- `evidence.py` — core extraction helpers + table builder
+- Tool: `pubmed_evidence_table` (accepts PMIDs or snapshot_id)
+- Output formats: JSON (primary) + CSV
+- Offline tests with synthetic abstracts that contain / omit key elements
+- Updated ROADMAP + DEVELOPMENT_STATE
+
+### Columns (initial set — only when supported by text)
+| Column | Source |
+|--------|--------|
+| pmid | always |
+| title | always |
+| publication_types | NCBI |
+| study_design_hint | only if clearly stated in title/abstract (otherwise not_reported) |
+| population_hint | only if clearly stated |
+| intervention_hint | only if clearly stated |
+| comparator_hint | only if clearly stated |
+| outcome_hint | only if clearly stated |
+| sample_size | only if explicit number appears |
+| has_retraction_notice | NCBI |
+| abstract_available | boolean |
+| extraction_notes | free text for reviewer |
+
+---
+
+## Phase 4 — Differentiation
+- Europe PMC adapter + careful deduplication
+- Citation chasing (with coverage notes)
+- Retraction / correction monitoring for saved libraries
+
+## Explicitly out of scope
+- Automatic GRADE or risk-of-bias
+- Unvalidated AI-generated study characteristics
+- Claims of exhaustive searching
+- Complex web dashboard
+- Tool explosion that reduces auditability
 
 ## Phase 4 — Differentiation
 - Europe PMC adapter + careful deduplication
