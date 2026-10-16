@@ -1,4 +1,4 @@
-# PubMed MCP Development State
+﻿# PubMed MCP Development State
 
 ## 1. Project Identity
 - **Name:** pubmed-access-mcp (Repository: ahsanmandhar-ui/pubmed-mcp)
@@ -8,7 +8,7 @@
 - **Schema version:** 1.1
 
 ## 2. Product Thesis
-- **Core Principle:** NCBI → retrieval → deterministic normalization → provenance.
+- **Core Principle:** NCBI â†’ retrieval â†’ deterministic normalization â†’ provenance.
 - **Strict Anti-Inference:** The server is a retrieval and normalization layer, NOT an AI inference agent. It never guesses or fills in missing metadata (no hallucinated DOIs, no inferred sample sizes, no guessed study types, no fabricated countries).
 - **Authoritative Source:** NCBI PubMed is the single source of truth. No silent external enrichment (Crossref, OpenAlex, Semantic Scholar, etc.) unless an explicit modular layer is introduced in the future.
 - **Auditability & Reproducibility:** Every retrieved record and search query includes machine-verifiable provenance and query translation, allowing researchers and systematic reviewers to audit exactly what NCBI returned.
@@ -35,7 +35,7 @@ pubmed-mcp
   |
   |   +-- Export Layer (export.py)
   |     - Bibliographic exporters: RIS, BibTeX, CSV, JSON
-  |     - Accepts record list or snapshot_id (snapshot → fetch → export pipeline)
+  |     - Accepts record list or snapshot_id (snapshot â†’ fetch â†’ export pipeline)
   |     - Never invents field values; tolerates legacy and provenance-style records
   |
   |   +-- Evidence Table Layer (evidence.py)
@@ -85,37 +85,37 @@ NCBI E-utilities (https://eutils.ncbi.nlm.nih.gov/entrez/eutils)
 ## 4. Repository Structure
 ```
 .
-├── .gitignore
-├── DEVELOPMENT_STATE.md   # Persistent source of truth for engineering sessions
-├── LICENSE                # Apache 2.0
-├── README.md              # User-facing documentation and quick start
-├── pyproject.toml         # PEP 621 metadata, entry point: pubmed-access-mcp = server:main
-├── requirements.txt       # Dependencies: mcp, requests
-├── smithery.yaml          # Smithery MCP registry manifest
-├── access.py              # Open-access detection (Unpaywall + PubMed Central) & safe PDF downloads
-├── server.py              # FastMCP server definition & tool entry points
-├── provenance.py           # Phase 1: Evidence Provenance Ledger
-├── snapshots.py            # Phase 1: Search Snapshots (PUBMED-YYYYMMDD-XXXXXX)
-├── export.py               # Phase 2: Bibliographic exporters (RIS, BibTeX, CSV, JSON)
-├── evidence.py             # Phase 3: Structured evidence table builder
-├── europe_pmc.py           # Phase 4: Europe PMC client + normalizer
-├── dedupe.py               # Phase 4: Cross-source deduplication
-├── citations.py            # Phase 4: Citation chasing helpers
-├── retraction.py           # Phase 4: Retraction / correction monitoring helpers
-├── benchmark.py            # Phase 5: Offline evaluation & regression benchmark
-├── audit.py                # Phase 2: Download / access audit trail helpers
-├── tests/
-│   ├── test_access.py     # Offline synthetic tests for access detection and PDF safety
-│   ├── test_server.py     # Offline synthetic tests for XML parsing and tool validation
-│   ├── test_client.py     # Offline tests for ncbi_client and server tools
-│   ├── test_provenance.py # Phase 1: offline provenance ledger tests
-│   ├── test_snapshots.py  # Phase 1: offline snapshot store tests
-│   ├── test_export.py     # Phase 2: offline exporter tests
-│   ├── test_audit.py      # Phase 2: offline audit helper tests
-│   ├── test_evidence.py   # Phase 3: offline evidence table tests
-│   ├── test_dedupe.py     # Phase 4: offline deduplication tests
-│   ├── test_retraction.py # Phase 4: offline retraction monitoring tests
-│   └── test_benchmark.py  # Phase 5: offline benchmark / regression tests
+â”œâ”€â”€ .gitignore
+â”œâ”€â”€ DEVELOPMENT_STATE.md   # Persistent source of truth for engineering sessions
+â”œâ”€â”€ LICENSE                # Apache 2.0
+â”œâ”€â”€ README.md              # User-facing documentation and quick start
+â”œâ”€â”€ pyproject.toml         # PEP 621 metadata, entry point: pubmed-access-mcp = server:main
+â”œâ”€â”€ requirements.txt       # Dependencies: mcp, requests
+â”œâ”€â”€ smithery.yaml          # Smithery MCP registry manifest
+â”œâ”€â”€ access.py              # Open-access detection (Unpaywall + PubMed Central) & safe PDF downloads
+â”œâ”€â”€ server.py              # FastMCP server definition & tool entry points
+â”œâ”€â”€ provenance.py           # Phase 1: Evidence Provenance Ledger
+â”œâ”€â”€ snapshots.py            # Phase 1: Search Snapshots (PUBMED-YYYYMMDD-XXXXXX)
+â”œâ”€â”€ export.py               # Phase 2: Bibliographic exporters (RIS, BibTeX, CSV, JSON)
+â”œâ”€â”€ evidence.py             # Phase 3: Structured evidence table builder
+â”œâ”€â”€ europe_pmc.py           # Phase 4: Europe PMC client + normalizer
+â”œâ”€â”€ dedupe.py               # Phase 4: Cross-source deduplication
+â”œâ”€â”€ citations.py            # Phase 4: Citation chasing helpers
+â”œâ”€â”€ retraction.py           # Phase 4: Retraction / correction monitoring helpers
+â”œâ”€â”€ benchmark.py            # Phase 5: Offline evaluation & regression benchmark
+â”œâ”€â”€ audit.py                # Phase 2: Download / access audit trail helpers
+â”œâ”€â”€ tests/
+â”‚   â”œâ”€â”€ test_access.py     # Offline synthetic tests for access detection and PDF safety
+â”‚   â”œâ”€â”€ test_server.py     # Offline synthetic tests for XML parsing and tool validation
+â”‚   â”œâ”€â”€ test_client.py     # Offline tests for ncbi_client and server tools
+â”‚   â”œâ”€â”€ test_provenance.py # Phase 1: offline provenance ledger tests
+â”‚   â”œâ”€â”€ test_snapshots.py  # Phase 1: offline snapshot store tests
+â”‚   â”œâ”€â”€ test_export.py     # Phase 2: offline exporter tests
+â”‚   â”œâ”€â”€ test_audit.py      # Phase 2: offline audit helper tests
+â”‚   â”œâ”€â”€ test_evidence.py   # Phase 3: offline evidence table tests
+â”‚   â”œâ”€â”€ test_dedupe.py     # Phase 4: offline deduplication tests
+â”‚   â”œâ”€â”€ test_retraction.py # Phase 4: offline retraction monitoring tests
+â”‚   â””â”€â”€ test_benchmark.py  # Phase 5: offline benchmark / regression tests
 ```
 
 ## 5. MCP Surface
@@ -142,7 +142,7 @@ NCBI E-utilities (https://eutils.ncbi.nlm.nih.gov/entrez/eutils)
 7. `pubmed_database_info`: NCBI EInfo metadata (last update time, field tags, total database count).
 8. `europe_pmc_search`: Europe PMC REST search; normalizes into the same provenance schema; source "Europe PMC".
 9. `europe_pmc_get`: Fetch a single Europe PMC record by external ID (PMID/PMCID/DOI).
-10. `pubmed_deduplicate`: Cross-source deduplication (PMID → DOI → PMCID → title+author+year); ambiguous matches to review list.
+10. `pubmed_deduplicate`: Cross-source deduplication (PMID â†’ DOI â†’ PMCID â†’ title+author+year); ambiguous matches to review list.
 11. `pubmed_citation_chase`: Citation-chase stub recording coverage notes; never invents citations.
 12. `pubmed_retraction_check`: Re-check PMIDs or a snapshot for retraction / erratum / correction notices; "verified no notice" vs "not yet checked".
 
@@ -271,7 +271,7 @@ NCBI E-utilities (https://eutils.ncbi.nlm.nih.gov/entrez/eutils)
 - [ ] Search snapshot identifiers (`PUBMED-YYYYMMDD-XXXXXX`) and session preservation.
 
 ## 17. Remaining Roadmap
-### P0 (Core Stability & Architecture) — COMPLETED
+### P0 (Core Stability & Architecture) â€” COMPLETED
 - [x] Separate NCBI client layer (`ncbi_client.py`) with clean session management and error typing.
 - [x] Structured provenance generator in `ncbi_client.py`.
 - [x] Implement `pubmed_database_info` and canonical `pubmed_search` with search reproducibility object.
@@ -356,9 +356,9 @@ uvx pubmed-access-mcp
 
 ## 25. Last Verified
 - **Date:** 2026-10-17
-- **Git commit:** feature/phase5-benchmark (Phase 5 offline evaluation & regression benchmark)
+- **Git commit:** main (Phases 1–5 merged, examples docs pushed)
 - **Tests:** 47 pre-existing + 4 Phase 3 + 6 new Phase 4 + 11 new Phase 5 tests, 0 failed (offline synthetic test suite across all 11 test modules)
-- **Build:** Not yet built (pending Phase 5 commit)
+- **Build:** Ready (all modules present)
 - **Lint:** Clean syntax
 - **Typecheck:** Clean execution
 - **false_inference_count:** 0 (anti-inference guarantee holds)
@@ -370,13 +370,13 @@ uvx pubmed-access-mcp
   - `ROADMAP.md` (Phase 4 marked DONE; Phase 5 added as CURRENT)
   - `DEVELOPMENT_STATE.md` (added pubmed_validate to Target Tools, benchmark.py + test_benchmark.py to structure, updated Last Verified)
   - `CLINE_PHASE5.md` (NEW: Phase 5 instruction document)
-
 ## 26. EXACT NEXT TASK
-1. Commit Phase 5 changes on `feature/phase5-benchmark` and push to origin.
-2. Fast-forward merge into `main` (feature branch → ff-merge → delete, following the Phase 3/4 merge pattern).
-3. Run the full offline test suite on `main` (all previous + new tests must pass; false_inference_count == 0).
-4. Run final confirmation per CLINE_PHASE5.md.
+All Phases 1–5 are DONE and merged to `main`. No pending phase work.
 
+Optional follow-ups:
+- Bump release version from `0.3.0-dev` to `0.3.0` on `main`.
+- Publish to PyPI.
 ## 27. SESSION HANDOFF
-Next agent should:
-Review `DEVELOPMENT_STATE.md` Section 26, verify the Phase 4 branch is merged to `main` with all tests green, then consider `pubmed_validate` tool implementation or Phase 4 scaffolding review.
+Phases 1–5 are complete on `main`. Next agent should:
+- Run `git pull --ff-only` before starting new work (verify remote sync).
+- Optionally bump version to `0.3.0` and release.

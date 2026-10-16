@@ -47,7 +47,7 @@ flowchart TB
         T4[check_access / download_pdfs]
         T5[pubmed_database_info]
         
-        NC["ncbi_client.py<br/>rate-limit · retry · provenance"]
+        NC["ncbi_client.py<br/>rate-limit Â· retry Â· provenance"]
         ACC["access.py<br/>Unpaywall + PMC"]
     end
 
@@ -75,7 +75,7 @@ flowchart TB
     style External fill:#fce7f3,stroke:#db2777
 ```
 
-### Data flow (search → records)
+### Data flow (search â†’ records)
 
 ```mermaid
 flowchart LR
@@ -102,6 +102,28 @@ flowchart LR
 
 ---
 
+## Guarantees
+
+| Guarantee | Meaning |
+|-----------|---------|
+| **Source fidelity** | Every field comes directly from the NCBI E-utilities response. Nothing is inferred, guessed, paraphrased, or enriched from external sources. |
+| **Missingness flagged** | A field PubMed does not provide is returned as the literal string `"Data not provided in PubMed abstract"` â€” never fabricated. |
+| **Not-found reported** | PMIDs requested but not returned by NCBI are listed in `not_found`, never silently dropped or fabricated. |
+| **Provenance on every record** | Each normalized record carries a `provenance` block marking every field as `directly_sourced` or `not_returned_by_ncbi`. |
+| **Anti-inference** | `false_inference_count == 0` â€” verified by the offline regression benchmark (`benchmark.py`). |
+| **No paywall bypass** | Only legally open-access copies (PubMed Central, Unpaywall gold/green) are indexed and downloaded. |
+| **Stdout reserved for MCP** | In stdio mode, stdout is reserved for the MCP protocol; all logging goes to stderr. |
+
+### What this is not
+
+- No full-text extraction beyond legally open PDFs
+- No evidence-level grading (CEBM/GRADE) added
+- No silent enrichment from Crossref, OpenAlex, Semantic Scholar, or other databases
+- No paywall bypass
+- No LLM-based abstract completion or metadata inference
+
+---
+
 ## Install
 
 ```bash
@@ -116,50 +138,109 @@ uvx pubmed-access-mcp
 
 ---
 
-## Tools at a glance
+---
 
-### Provenance & systematic-review tools
+## Tools grouped by phase / purpose
+
+### Phase 1 — Evidence provenance & search snapshots
 
 | Tool | What it does |
 |------|--------------|
-| `pubmed_get(pmid, mode="normalized")` | Single record. Normalized mode gives a fixed schema + missingness flags (`available` / `missing` / `not_returned_by_ncbi`) and notes any errata or retractions. Raw mode returns the original XML plus a SHA-256 hash. |
-| `pubmed_search(query, max_results=20, ...)` | Search with a reproducibility block (original query, NCBI translation, count, timestamp) and optional Entrez History tokens. |
-| `pubmed_fetch(pmids)` | Bulk fetch with per-record status and provenance. |
-| `pubmed_batch_fetch(...)` | Large-scale retrieval. Handles long PMID lists or Entrez History in chunks of up to 200. |
-| `pubmed_database_info(db="pubmed")` | NCBI EInfo: record counts, last update, field tags. |
+| `pubmed_database_info` | NCBI einfo for a database (field list, counts, last update). |
+| `pubmed_create_search_snapshot` | Save a search query + parameters as a named snapshot for reproducible retrieval. |
+| `pubmed_get_snapshot` | Retrieve a previously created search snapshot by ID. |
+| `pubmed_list_snapshots` | List existing snapshots (paginated). |
 
-### Access & PDF tools
+### Phase 2 — Bibliographic exports & download audit
 
 | Tool | What it does |
 |------|--------------|
-| `search_pubmed(...)` | Lightweight search (PMIDs + query translation). |
-| `fetch_abstracts(pmids)` | Classic record fetch (title, authors, journal, DOI, abstract, etc.). Up to 200 PMIDs. |
-| `search_with_access(...)` / `check_access(pmids)` | Classify each hit: open-access PDF, landing page only, or none found. |
-| `download_pdfs(pmids)` | Save verified open-access PDFs. Paywalled papers are skipped. |
+| `pubmed_export_ris` | Export records in RIS format (reference managers). |
+| `pubmed_export_bibtex` | Export records in BibTeX format. |
+| `pubmed_export_csv` | Export records as CSV. |
+| `pubmed_export_json` | Export records as JSON. |
+
+### Phase 3 — Source-linked structured evidence tables
+
+| Tool | What it does |
+|------|--------------|
+| `pubmed_evidence_table` | Build a structured evidence table from records or a snapshot. Every cell carries value + status + optional source quote. |
+
+### Phase 4 — Europe PMC, deduplication, citation chase, retraction monitoring
+
+| Tool | What it does |
+|------|--------------|
+| `europe_pmc_search` | Search Europe PMC (complementary to PubMed). |
+| `europe_pmc_get` | Fetch a single Europe PMC record by ID. |
+| `pubmed_deduplicate` | Deduplicate records by PMID / DOI / title matching. |
+| `pubmed_citation_chase` | Trace citations forward/backward for a set of PMIDs. |
+| `pubmed_retraction_check` | Check PMIDs for retraction / erratum notices via NCBI link data. |
+
+### Phase 5 — Offline evaluation & regression benchmark
+
+| Tool | What it does |
+|------|--------------|
+| `pubmed_validate` | Validate a normalized record against the anti-inference guarantee; returns `false_inference_count`. |
+
+### Core retrieval tools (all phases)
+
+| Tool | What it does |
+|------|--------------|
+| `pubmed_search` | Search PubMed via NCBI esearch. Returns PMIDs, total match count, query translation, and Entrez History tokens (`webenv` / `query_key`) when `use_history=True`. |
+| `pubmed_get` | Fetch a single normalized record by PMID, with full provenance. |
+| `pubmed_fetch` | Fetch multiple PMIDs in one call (internally chunked, max 200 per chunk). |
+| `pubmed_batch_fetch` | Retrieve large result sets via PMID list or Entrez History, chunked at `batch_size` (max 200). |
 
 ---
 
-## Guarantees
+## Retrieving full result sets (> 200 records)
 
-- Missing field → the string `"Data not provided in PubMed abstract"`. Nothing is inferred.
-- PMIDs NCBI did not return appear in `not_found`.
-- `publication_types` is NCBI’s own tag. No evidence grading (CEBM/GRADE) is added.
-- Retraction flag is true only when NCBI itself lists a `RetractionIn` link.
-- Rate limits are respected (3 req/s anonymous, 10 with API key) with exponential backoff.
+`pubmed_search` returns at most `max_results` PMIDs per call (default 20, capped at `MAX_SEARCH = 9999`). To retrieve all matching records when `total_matches` exceeds that:
 
-**What this is not**
-- No full-text extraction beyond legally open PDFs
-- No evidence-level grading
-- No paywall bypass
-- No silent enrichment from other databases
+```python
+# Step 1: Search with Entrez History enabled
+result = server.pubmed_search(
+    query="your PubMed query",
+    use_history=True,        # stores search on NCBI Entrez History server
+    max_results=200,         # or higher, up to 9999
+)
+
+total_matches = result["search"]["count"]      # total matching records
+webenv = result["webenv"]                       # Entrez WebEnv token
+query_key = result["query_key"]                 # Entrez QueryKey token
+
+# Step 2: Batch-fetch all records in chunks of 200
+all_records = server.pubmed_batch_fetch(
+    webenv=webenv,
+    query_key=query_key,
+    total_records=total_matches,
+    batch_size=200,         # max 200 per chunk
+)
+```
+
+`pubmed_batch_fetch` iterates `retstart` from 0 to `total_records` in chunks of `batch_size`, returning per-batch results, per-record statuses, and `not_found` PMIDs.
 
 ---
 
+
+## Examples
+
+Runnable, copy-pasteable snippets for real workflows. No secrets, no real API
+keys, no emails — every file uses placeholders only.
+
+| Example | Description |
+|---------|-------------|
+| [examples/SYSTEMATIC_REVIEW_EXAMPLE.md](examples/SYSTEMATIC_REVIEW_EXAMPLE.md) | Full-retrieval pattern for systematic reviews: pubmed_search(use_history=True) → pubmed_batch_fetch(...). Covers the E. coli × tetracycline × MGE × 2000–2025 protocol query. |
+| [examples/LIVE_SMOKE_EXAMPLE.md](examples/LIVE_SMOKE_EXAMPLE.md) | Minimal end-to-end smoke test: search → normalized single record → anti-inference benchmark check. |
+
+Each example declares the anti-inference guarantee (alse_inference_count == 0)
+and documents provenance statuses (directly_sourced / 
+ot_returned_by_ncbi).
 ## Open-access PDFs
 
 Sources: Unpaywall (DOI) and PubMed Central (PMCID).  
 Set `UNPAYWALL_EMAIL` or `NCBI_EMAIL`.  
-`NO_OPEN_ACCESS_FOUND` means no legal free copy is indexed — it does not mean an institution cannot reach the paper.  
+`NO_OPEN_ACCESS_FOUND` means no legal free copy is indexed â€” it does not mean an institution cannot reach the paper.  
 Every downloaded file is checked for a real `%PDF` header. Bot-check pages are rejected.  
 Default folder: `~/pubmed_pdfs` (override with `PUBMED_PDF_DIR`). No paywall bypass.
 
@@ -276,22 +357,7 @@ python tests/test_access.py
 
 ---
 
-## Examples
-
-Runnable, copy-pasteable snippets for real workflows. No secrets, no real API
-keys, no emails — every file uses placeholders only.
-
-| Example | Description |
-|---------|-------------|
-| [`examples/SYSTEMATIC_REVIEW_EXAMPLE.md`](examples/SYSTEMATIC_REVIEW_EXAMPLE.md) | Full-retrieval pattern for systematic reviews: `pubmed_search(use_history=True)` → `pubmed_batch_fetch(...)`. Covers the E. coli × tetracycline × MGE × 2000–2025 protocol query. |
-| [`examples/LIVE_SMOKE_EXAMPLE.md`](examples/LIVE_SMOKE_EXAMPLE.md) | Minimal end-to-end smoke test: search → normalized single record → anti-inference benchmark check. |
-
-Each example declares the anti-inference guarantee (`false_inference_count == 0`)
-and documents provenance statuses (`directly_sourced` / `not_returned_by_ncbi`).
-
----
-
 ## License
 
-Apache License 2.0 — see `LICENSE`.  
-Copyright © ahsanmandhar-ui.
+Apache License 2.0 â€” see `LICENSE`.  
+Copyright Â© ahsanmandhar-ui.
