@@ -276,6 +276,21 @@ python tests/test_access.py
 
 ---
 
+## Examples
+
+Runnable, copy-pasteable snippets for real workflows. No secrets, no real API
+keys, no emails — every file uses placeholders only.
+
+| Example | Description |
+|---------|-------------|
+| [`examples/SYSTEMATIC_REVIEW_EXAMPLE.md`](examples/SYSTEMATIC_REVIEW_EXAMPLE.md) | Full-retrieval pattern for systematic reviews: `pubmed_search(use_history=True)` → `pubmed_batch_fetch(...)`. Covers the E. coli × tetracycline × MGE × 2000–2025 protocol query. |
+| [`examples/LIVE_SMOKE_EXAMPLE.md`](examples/LIVE_SMOKE_EXAMPLE.md) | Minimal end-to-end smoke test: search → normalized single record → anti-inference benchmark check. |
+
+Each example declares the anti-inference guarantee (`false_inference_count == 0`)
+and documents provenance statuses (`directly_sourced` / `not_returned_by_ncbi`).
+
+---
+
 ## License
 
 Apache License 2.0 — see `LICENSE`.  
