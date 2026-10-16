@@ -13,6 +13,17 @@ from urllib.parse import quote, urlparse
 
 import requests
 
+from audit import (  # noqa: E402
+    make_access_audit,
+    sha256_file,
+    STATUS_FAILED,
+    STATUS_LANDING_PAGE_ONLY,
+    STATUS_NOT_ATTEMPTED,
+    STATUS_NO_OPEN_ACCESS,
+    STATUS_OPEN_ACCESS_PDF,
+    STATUS_SUCCESS,
+)
+
 MISSING = "Data not provided in PubMed abstract"
 NO_PDF = "No open-access PDF found"
 UNPAYWALL = "https://api.unpaywall.org/v2"
@@ -183,21 +194,83 @@ def download_many(results: List[dict], folder: Path, get: Callable = requests.ge
     for r in results:
         pmid = str(r["pmid"])
         dest = folder / f"PMID{pmid}.pdf"
-        if not r["pdf_candidates"]:
-            out.append({"pmid": pmid, "status": "skipped", "reason": f"no direct open-access PDF link (access={r['access']})"})
+        access_val = r.get("access", UNCHECKED)
+
+        # Map access value to audit status / route
+        if access_val == OPEN_PDF:
+            access_status = STATUS_OPEN_ACCESS_PDF
+            src = r.get("source", "") or ""
+            route = "pmc" if "pmc" in src.lower() else "unpaywall"
+        elif access_val == OPEN_LANDING:
+            access_status = STATUS_LANDING_PAGE_ONLY
+            route = None
+        elif access_val == NO_OA:
+            access_status = STATUS_NO_OPEN_ACCESS
+            route = None
+        else:
+            access_status = "unchecked"
+            route = None
+
+        if not r.get("pdf_candidates"):
+            entry = make_access_audit(
+                pmid,
+                access_status=access_status,
+                route=route,
+                download_status=STATUS_NOT_ATTEMPTED,
+                error=f"no direct open-access PDF link (access={access_val})",
+            )
+            entry["status"] = "skipped"
+            entry["reason"] = entry["error"]
+            out.append(entry)
             continue
+
         if dest.exists() and dest.stat().st_size > 0:
-            out.append({"pmid": pmid, "status": "already_exists", "file": str(dest)})
+            entry = make_access_audit(
+                pmid,
+                access_status=access_status,
+                route=route,
+                download_status=STATUS_SUCCESS,
+                file_path=str(dest),
+                checksum_sha256=sha256_file(str(dest)),
+            )
+            entry["status"] = "already_exists"
+            entry["file"] = str(dest)
+            out.append(entry)
             continue
+
         errors = []
+        downloaded = False
         for c in r["pdf_candidates"]:
             try:
                 size = _download(c["url"], dest, get)
-                out.append({"pmid": pmid, "status": "downloaded", "file": str(dest), "bytes": size, "source": c["source"], "url": c["url"]})
+                entry = make_access_audit(
+                    pmid,
+                    access_status=access_status,
+                    route=route,
+                    download_status=STATUS_SUCCESS,
+                    file_path=str(dest),
+                    checksum_sha256=sha256_file(str(dest)),
+                )
+                entry["status"] = "downloaded"
+                entry["file"] = str(dest)
+                entry["bytes"] = size
+                entry["source"] = c["source"]
+                entry["url"] = c["url"]
+                out.append(entry)
+                downloaded = True
                 break
             except (ValueError, OSError, requests.RequestException) as e:
                 errors.append(f"{c['source']}: {e}")
             time.sleep(delay)
-        else:
-            out.append({"pmid": pmid, "status": "failed", "reason": errors})
+        if not downloaded:
+            entry = make_access_audit(
+                pmid,
+                access_status=access_status,
+                route=route,
+                download_status=STATUS_FAILED,
+                error="; ".join(errors),
+            )
+            entry["status"] = "failed"
+            entry["reason"] = errors
+            out.append(entry)
     return out

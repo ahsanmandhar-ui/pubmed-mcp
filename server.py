@@ -28,13 +28,15 @@ import sys
 import threading
 import time
 import xml.etree.ElementTree as ET
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import requests
 import access
 import ncbi_client
 import provenance as prov
 import snapshots
+import export
+import audit
 try:  # mcp 1.x
     from mcp.server.fastmcp import FastMCP
 except ModuleNotFoundError:  # mcp 2.x renamed FastMCP -> MCPServer
@@ -858,6 +860,79 @@ def pubmed_list_snapshots(limit: int = 20) -> dict:
             for s in items
         ],
     }
+
+
+# ----------------------------------------------------------------- bibliographic exports (Phase 2)
+def _resolve_export_records(
+    records: Optional[List[Dict[str, Any]]],
+    snapshot_id: Optional[str],
+) -> List[Dict[str, Any]]:
+    """Resolve records for export: either use the provided list or fetch
+    from a search snapshot via the snapshot store + pubmed_fetch logic."""
+    if records is not None:
+        return records
+    if snapshot_id is not None:
+        snap = snapshots.store.get(snapshot_id)
+        if snap is None:
+            raise ValueError(f"snapshot not found: {snapshot_id}")
+        pmids = snap.get("pmids", [])
+        if not pmids:
+            return []
+        fetched = fetch_abstracts(pmids)
+        return fetched.get("records", [])
+    raise ValueError("provide either records or a valid snapshot_id")
+
+
+@mcp.tool()
+def pubmed_export_ris(
+    records: Optional[List[Dict[str, Any]]] = None,
+    snapshot_id: Optional[str] = None,
+) -> dict:
+    """Export records (or a whole search snapshot) to RIS format.
+
+    Provide either `records` or `snapshot_id`. When snapshot_id is given,
+    PMIDs are read from the snapshot store, records are fetched via
+    pubmed_fetch/fetch_abstracts, then exported. Never invents field values.
+    """
+    recs = _resolve_export_records(records, snapshot_id)
+    text = export.to_ris(recs)
+    return {"format": "ris", "record_count": len(recs), "content": text}
+
+
+@mcp.tool()
+def pubmed_export_bibtex(
+    records: Optional[List[Dict[str, Any]]] = None,
+    snapshot_id: Optional[str] = None,
+) -> dict:
+    """Export records (or a whole search snapshot) to BibTeX format."""
+    recs = _resolve_export_records(records, snapshot_id)
+    text = export.to_bibtex(recs)
+    return {"format": "bibtex", "record_count": len(recs), "content": text}
+
+
+@mcp.tool()
+def pubmed_export_csv(
+    records: Optional[List[Dict[str, Any]]] = None,
+    snapshot_id: Optional[str] = None,
+) -> dict:
+    """Export records (or a whole search snapshot) to CSV format."""
+    recs = _resolve_export_records(records, snapshot_id)
+    text = export.to_csv(recs)
+    return {"format": "csv", "record_count": len(recs), "content": text}
+
+
+@mcp.tool()
+def pubmed_export_json(
+    records: Optional[List[Dict[str, Any]]] = None,
+    snapshot_id: Optional[str] = None,
+) -> dict:
+    """Export records (or a whole search snapshot) to JSON format.
+
+    Preserves full provenance structure if present in the records.
+    """
+    recs = _resolve_export_records(records, snapshot_id)
+    text = export.to_json(recs)
+    return {"format": "json", "record_count": len(recs), "content": text}
 
 
 def main():
