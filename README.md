@@ -1,4 +1,4 @@
-<p align="center">
+﻿<p align="center">
   <img src="docs/images/pubmed-mcp-logo.svg" alt="pubmed-mcp logo" width="140"/>
 </p>
 
@@ -22,9 +22,7 @@
 
 ## Why this exists
 
-Most PubMed wrappers either invent missing metadata or bury the original NCBI response.  
-This one does neither. Every field comes from the source. If PubMed left something out, you see it.  
-That makes the output usable in PRISMA workflows and audit trails.
+Most PubMed wrappers either invent missing metadata or bury the original NCBI response. This one does neither. Every field comes from the source. If PubMed left something out, you see it. That makes the output usable in PRISMA workflows and audit trails.
 
 ---
 
@@ -46,8 +44,8 @@ flowchart TB
         T3[pubmed_fetch / batch_fetch]
         T4[check_access / download_pdfs]
         T5[pubmed_database_info]
-        
-        NC["ncbi_client.py<br/>rate-limit Â· retry Â· provenance"]
+
+        NC["ncbi_client.py<br/>rate-limit · retry · provenance"]
         ACC["access.py<br/>Unpaywall + PMC"]
     end
 
@@ -75,7 +73,7 @@ flowchart TB
     style External fill:#fce7f3,stroke:#db2777
 ```
 
-### Data flow (search â†’ records)
+### Data flow (search → records)
 
 ```mermaid
 flowchart LR
@@ -83,14 +81,14 @@ flowchart LR
     S --> H{use_history?}
     H -->|yes| WH[WebEnv + QueryKey]
     H -->|no| PMIDs[PMID list]
-    
+
     WH --> BF[pubmed_batch_fetch]
     PMIDs --> BF
     PMIDs --> GET[pubmed_get]
-    
+
     BF --> NORM["Normalized records<br/>+ missingness flags"]
     GET --> NORM
-    
+
     NORM --> PROV[Provenance block]
     NORM --> RET[Retraction / Erratum flags]
 
@@ -107,10 +105,10 @@ flowchart LR
 | Guarantee | Meaning |
 |-----------|---------|
 | **Source fidelity** | Every field comes directly from the NCBI E-utilities response. Nothing is inferred, guessed, paraphrased, or enriched from external sources. |
-| **Missingness flagged** | A field PubMed does not provide is returned as the literal string `"Data not provided in PubMed abstract"` â€” never fabricated. |
+| **Missingness flagged** | A field PubMed does not provide is returned as the literal string `"Data not provided in PubMed abstract"` — never fabricated. |
 | **Not-found reported** | PMIDs requested but not returned by NCBI are listed in `not_found`, never silently dropped or fabricated. |
 | **Provenance on every record** | Each normalized record carries a `provenance` block marking every field as `directly_sourced` or `not_returned_by_ncbi`. |
-| **Anti-inference** | `false_inference_count == 0` â€” verified by the offline regression benchmark (`benchmark.py`). |
+| **Anti-inference** | `false_inference_count == 0` — verified by the offline regression benchmark (`benchmark.py`). |
 | **No paywall bypass** | Only legally open-access copies (PubMed Central, Unpaywall gold/green) are indexed and downloaded. |
 | **Stdout reserved for MCP** | In stdio mode, stdout is reserved for the MCP protocol; all logging goes to stderr. |
 
@@ -135,8 +133,6 @@ Or run without installing:
 ```bash
 uvx pubmed-access-mcp
 ```
-
----
 
 ---
 
@@ -206,8 +202,8 @@ result = server.pubmed_search(
 )
 
 total_matches = result["search"]["count"]      # total matching records
-webenv = result["webenv"]                       # Entrez WebEnv token
-query_key = result["query_key"]                 # Entrez QueryKey token
+webenv = result["webenv"]                      # Entrez WebEnv token
+query_key = result["query_key"]                # Entrez QueryKey token
 
 # Step 2: Batch-fetch all records in chunks of 200
 all_records = server.pubmed_batch_fetch(
@@ -222,27 +218,22 @@ all_records = server.pubmed_batch_fetch(
 
 ---
 
-
 ## Examples
 
-Runnable, copy-pasteable snippets for real workflows. No secrets, no real API
-keys, no emails — every file uses placeholders only.
+Runnable, copy-pasteable snippets for real workflows. No secrets, no real API keys, no emails — every file uses placeholders only.
 
 | Example | Description |
 |---------|-------------|
-| [examples/SYSTEMATIC_REVIEW_EXAMPLE.md](examples/SYSTEMATIC_REVIEW_EXAMPLE.md) | Full-retrieval pattern for systematic reviews: pubmed_search(use_history=True) → pubmed_batch_fetch(...). Covers the E. coli × tetracycline × MGE × 2000–2025 protocol query. |
+| [examples/SYSTEMATIC_REVIEW_EXAMPLE.md](examples/SYSTEMATIC_REVIEW_EXAMPLE.md) | Full-retrieval pattern for systematic reviews: `pubmed_search(use_history=True)` → `pubmed_batch_fetch(...)`. Covers the E. coli × tetracycline × MGE × 2000–2025 protocol query. |
 | [examples/LIVE_SMOKE_EXAMPLE.md](examples/LIVE_SMOKE_EXAMPLE.md) | Minimal end-to-end smoke test: search → normalized single record → anti-inference benchmark check. |
 
-Each example declares the anti-inference guarantee (alse_inference_count == 0)
-and documents provenance statuses (directly_sourced / 
-ot_returned_by_ncbi).
+Each example declares the anti-inference guarantee (`false_inference_count == 0`) and documents provenance statuses (`directly_sourced` / `not_returned_by_ncbi`).
+
+---
+
 ## Open-access PDFs
 
-Sources: Unpaywall (DOI) and PubMed Central (PMCID).  
-Set `UNPAYWALL_EMAIL` or `NCBI_EMAIL`.  
-`NO_OPEN_ACCESS_FOUND` means no legal free copy is indexed â€” it does not mean an institution cannot reach the paper.  
-Every downloaded file is checked for a real `%PDF` header. Bot-check pages are rejected.  
-Default folder: `~/pubmed_pdfs` (override with `PUBMED_PDF_DIR`). No paywall bypass.
+Sources: Unpaywall (DOI) and PubMed Central (PMCID). Set `UNPAYWALL_EMAIL` or `NCBI_EMAIL`. `NO_OPEN_ACCESS_FOUND` means no legal free copy is indexed — it does not mean an institution cannot reach the paper. Every downloaded file is checked for a real `%PDF` header. Bot-check pages are rejected. Default folder: `~/pubmed_pdfs` (override with `PUBMED_PDF_DIR`). No paywall bypass.
 
 ---
 
@@ -300,8 +291,7 @@ Default folder: `~/pubmed_pdfs` (override with `PUBMED_PDF_DIR`). No paywall byp
 }
 ```
 
-Optional env vars: `NCBI_API_KEY` (raises rate limit), `NCBI_TOOL`.  
-Keep real keys in your global config, never in a committed file.
+Optional env vars: `NCBI_API_KEY` (raises rate limit), `NCBI_TOOL`. Keep real keys in your global config, never in a committed file.
 
 ---
 
@@ -346,6 +336,14 @@ python tests/test_server.py   # offline
 python tests/test_access.py
 ```
 
+Run the full offline test suite:
+
+```bash
+python -m pytest tests/ -v
+```
+
+All 68 tests pass with `false_inference_count == 0`.
+
 ---
 
 ## Limitations
@@ -359,5 +357,4 @@ python tests/test_access.py
 
 ## License
 
-Apache License 2.0 â€” see `LICENSE`.  
-Copyright Â© ahsanmandhar-ui.
+Apache License 2.0 — see `LICENSE`. Copyright © ahsanmandhar-ui.
