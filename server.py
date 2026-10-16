@@ -38,6 +38,10 @@ import snapshots
 import export
 import audit
 import evidence
+import europe_pmc
+import dedupe
+import citations
+import retraction
 try:  # mcp 1.x
     from mcp.server.fastmcp import FastMCP
 except ModuleNotFoundError:  # mcp 2.x renamed FastMCP -> MCPServer
@@ -967,6 +971,134 @@ def pubmed_evidence_table(
         "row_count": table["row_count"],
         "table": table,
     }
+
+
+# ----------------------------------------------------------------- Phase 4: Europe PMC, deduplication, citation chase, retraction
+
+@mcp.tool()
+def europe_pmc_search(
+    query: str,
+    page_size: int = 25,
+    cursor_mark: str = "*",
+) -> dict:
+    """Search Europe PMC and normalize results into the provenance schema.
+
+    Every record declares source "Europe PMC" and preserves available identifiers
+    (PMID, PMCID, DOI, Europe PMC ID). Rate-limited politely. Never invents fields.
+    """
+    epmc_client = europe_pmc.EuropePmcClient()
+    payload = epmc_client.search(query=query, page_size=page_size, cursor_mark=cursor_mark)
+    result_list = (payload.get("resultList") or {}).get("result", [])
+    records = [europe_pmc.normalize_epmc_record(r) for r in result_list]
+    return {
+        "query": query,
+        "source": "Europe PMC",
+        "hit_count": payload.get("hitCount"),
+        "page_size": page_size,
+        "cursor_mark": cursor_mark,
+        "record_count": len(records),
+        "records": records,
+    }
+
+
+@mcp.tool()
+def europe_pmc_get(
+    ext_id: str,
+    source: str = "MED",
+) -> dict:
+    """Fetch a single Europe PMC record by external ID (usually PMID with source=MED).
+
+    Normalized into the same provenance schema used for PubMed. Source is "Europe PMC".
+    Never invents fields.
+    """
+    epmc_client = europe_pmc.EuropePmcClient()
+    raw = epmc_client.get_by_id(ext_id=ext_id, source=source)
+    record = europe_pmc.normalize_epmc_record(raw)
+    return {
+        "source": "Europe PMC",
+        "external_id": ext_id,
+        "source_type": source,
+        "record": record,
+    }
+
+
+@mcp.tool()
+def pubmed_deduplicate(
+    records: List[Dict[str, Any]],
+) -> dict:
+    """Cross-source deduplication of PubMed / Europe PMC records.
+
+    Matches on PMID → DOI → PMCID → conservative title + first-author + year.
+    Ambiguous matches are emitted to a review list; nothing is silently dropped.
+    Every kept record declares its source.
+    """
+    return dedupe.deduplicate(records)
+
+
+@mcp.tool()
+def pubmed_citation_chase(
+    pmid: str,
+) -> dict:
+    """Citation-chase stub: references and citing articles for a PMID.
+
+    Europe PMC supports reference/citation endpoints; this stub records coverage
+    notes and returns no citations until the live endpoint is wired. Never invents
+    citations. Absence of data is not evidence of absence.
+    """
+    return citations.make_citation_result(
+        source_pmid=pmid,
+        references_available=False,
+        citing_available=False,
+        notes=(
+            "Citation chasing is a Phase 4 stub. Europe PMC reference/citation "
+            "endpoints are not yet wired. No citations are reported "
+            "(not evidence of absence)."
+        ),
+    )
+
+
+@mcp.tool()
+def pubmed_retraction_check(
+    pmids: Optional[List[str]] = None,
+    snapshot_id: Optional[str] = None,
+) -> dict:
+    """Re-check PMIDs (or a search snapshot) for retraction / erratum / correction notices.
+
+    Uses has_retraction_notice / has_erratum_notice / comments_corrections already
+    attached to PubMed records. Distinguishes "verified no notice" from "not yet
+    checked" (PMIDs not returned by the fetch). Never invents notices.
+    """
+    if pmids is None and snapshot_id is not None:
+        snap = snapshots.store.get(snapshot_id)
+        if snap is None:
+            raise ValueError(f"snapshot not found: {snapshot_id}")
+        pmids = snap.get("pmids", [])
+    if not pmids:
+        return retraction.summarize_retraction_checks([])
+
+    fetched = fetch_abstracts(pmids)
+    records = fetched.get("records", [])
+    results = []
+    for rec in records:
+        results.append(
+            retraction.make_retraction_check_result(
+                pmid=rec.get("pmid") or "",
+                has_retraction_notice=bool(rec.get("has_retraction_notice")),
+                has_erratum_notice=bool(rec.get("has_erratum_notice")),
+                comments_corrections=rec.get("comments_corrections") or [],
+                source="NCBI PubMed",
+            )
+        )
+    summary = retraction.summarize_retraction_checks(results)
+    not_checked = fetched.get("not_found", [])
+    if not_checked:
+        summary["not_checked"] = not_checked
+        summary["not_checked_count"] = len(not_checked)
+        summary["note"] = (
+            "PMIDs not returned by NCBI could not be verified: treated as "
+            "'not yet checked', not as 'clean'."
+        )
+    return summary
 
 
 def main():

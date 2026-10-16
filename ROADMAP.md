@@ -48,7 +48,7 @@ Strengthen the existing open-access path:
 
 ---
 
-## Phase 3 — Structured Evidence Tables (CURRENT)
+## Phase 3 — Structured Evidence Tables ✅ DONE
 
 **Goal:** Produce source-linked evidence tables that a human reviewer can trust.
 
@@ -63,8 +63,7 @@ Strengthen the existing open-access path:
 
 ### Deliverables
 - `evidence.py` — core extraction helpers + table builder
-- Tool: `pubmed_evidence_table` (accepts PMIDs or snapshot_id)
-- Output formats: JSON (primary) + CSV
+- Tool: `pubmed_evidence_table` (accepts records or snapshot_id; output JSON + CSV)
 - Offline tests with synthetic abstracts that contain / omit key elements
 - Updated ROADMAP + DEVELOPMENT_STATE
 
@@ -86,26 +85,49 @@ Strengthen the existing open-access path:
 
 ---
 
-## Phase 4 — Differentiation
-- Europe PMC adapter + careful deduplication
-- Citation chasing (with coverage notes)
-- Retraction / correction monitoring for saved libraries
+## Phase 4 — Differentiation (CURRENT)
 
-## Explicitly out of scope
+**Goal:** Expand coverage beyond PubMed while keeping provenance and anti-inference intact.
+
+### 4.1 Europe PMC adapter (P1)
+- New client module for Europe PMC REST API (`europe_pmc.py`)
+- Map Europe PMC records into the same normalized + provenance schema used for PubMed
+- Preserve original source (`Europe PMC`) and identifiers (PMID, PMCID, DOI, Europe PMC ID)
+- Rate-limit and error handling consistent with ncbi_client
+- Tools: `europe_pmc_search`, `europe_pmc_get`
+
+### 4.2 Cross-source deduplication (P1)
+- Deduplicate on PMID → DOI → PMCID → careful title+first-author+year fallback
+- Every merged record must declare which sources contributed and which identifier won
+- Never silently drop a record; emit a conflict / review list when matches are ambiguous
+- Module: `dedupe.py`; Tool: `pubmed_deduplicate`
+
+### 4.3 Citation chasing (P1)
+- Retrieve reference lists and citing articles where the source supports it (Europe PMC has good support)
+- Record coverage notes: "references available", "citing articles available", "not supported by this source"
+- Attach retrieval timestamp and source to every chased record
+- Module: `citations.py`; Tool: `pubmed_citation_chase` (stub that records coverage notes; never invents citations)
+
+### 4.4 Retraction / correction monitoring (P1)
+- Strengthen existing retraction/erratum detection (`has_retraction_notice`, `has_erratum_notice`, `comments_corrections`)
+- New tool to re-check a saved list of PMIDs (or a snapshot) for new retraction / expression-of-concern / correction notices
+- Distinguish "verified no notice" from "not yet checked"
+- Module: `retraction.py`; Tool: `pubmed_retraction_check`
+
+### Deliverables for this phase
+- `europe_pmc.py` — client + normalizer
+- `dedupe.py` — identifier-based + conservative bibliographic deduplication
+- `citations.py` — reference / citing-article helpers
+- `retraction.py` — retraction / correction monitoring helpers
+- Tools: `europe_pmc_search`, `europe_pmc_get`, `pubmed_deduplicate`, `pubmed_citation_chase`, `pubmed_retraction_check`
+- Offline tests with synthetic multi-source fixtures
+- Updated ROADMAP + DEVELOPMENT_STATE
+
+---
+
+## Explicitly still out of scope
 - Automatic GRADE or risk-of-bias
 - Unvalidated AI-generated study characteristics
-- Claims of exhaustive searching
-- Complex web dashboard
-- Tool explosion that reduces auditability
-
-## Phase 4 — Differentiation
-- Europe PMC adapter + careful deduplication
-- Citation chasing (with coverage notes)
-- Retraction / correction monitoring for saved libraries
-
-## Explicitly out of scope
-- Automatic GRADE or risk-of-bias
-- Unvalidated AI-generated study characteristics
-- Claims of exhaustive searching
+- Claims of exhaustive multi-database searching without human validation
 - Complex web dashboard
 - Tool explosion that reduces auditability

@@ -26,7 +26,9 @@ pubmed-mcp
   |       pubmed_batch_fetch, pubmed_database_info,
   |       pubmed_create_search_snapshot, pubmed_get_snapshot, pubmed_list_snapshots,
   |       pubmed_export_ris, pubmed_export_bibtex, pubmed_export_csv, pubmed_export_json,
-  |       pubmed_evidence_table
+  |       pubmed_evidence_table,
+  |       europe_pmc_search, europe_pmc_get,
+  |       pubmed_deduplicate, pubmed_citation_chase, pubmed_retraction_check
   |     - Legacy Compatibility: search_pubmed, fetch_abstracts, check_access,
   |       search_with_access, download_pdfs
   |
@@ -95,6 +97,10 @@ NCBI E-utilities (https://eutils.ncbi.nlm.nih.gov/entrez/eutils)
 ├── snapshots.py            # Phase 1: Search Snapshots (PUBMED-YYYYMMDD-XXXXXX)
 ├── export.py               # Phase 2: Bibliographic exporters (RIS, BibTeX, CSV, JSON)
 ├── evidence.py             # Phase 3: Structured evidence table builder
+├── europe_pmc.py           # Phase 4: Europe PMC client + normalizer
+├── dedupe.py               # Phase 4: Cross-source deduplication
+├── citations.py            # Phase 4: Citation chasing helpers
+├── retraction.py           # Phase 4: Retraction / correction monitoring helpers
 ├── audit.py                # Phase 2: Download / access audit trail helpers
 ├── tests/
 │   ├── test_access.py     # Offline synthetic tests for access detection and PDF safety
@@ -104,7 +110,9 @@ NCBI E-utilities (https://eutils.ncbi.nlm.nih.gov/entrez/eutils)
 │   ├── test_snapshots.py  # Phase 1: offline snapshot store tests
 │   ├── test_export.py     # Phase 2: offline exporter tests
 │   ├── test_audit.py      # Phase 2: offline audit helper tests
-│   └── test_evidence.py   # Phase 3: offline evidence table tests
+│   ├── test_evidence.py   # Phase 3: offline evidence table tests
+│   ├── test_dedupe.py     # Phase 4: offline deduplication tests
+│   └── test_retraction.py # Phase 4: offline retraction monitoring tests
 ```
 
 ## 5. MCP Surface
@@ -129,6 +137,11 @@ NCBI E-utilities (https://eutils.ncbi.nlm.nih.gov/entrez/eutils)
 5. `pubmed_validate`: Offline and schema-level validation of PMIDs, query syntax, and record consistency.
 6. `pubmed_search_audit`: Detailed analysis of query translation, MeSH terms, and search warnings.
 7. `pubmed_database_info`: NCBI EInfo metadata (last update time, field tags, total database count).
+8. `europe_pmc_search`: Europe PMC REST search; normalizes into the same provenance schema; source "Europe PMC".
+9. `europe_pmc_get`: Fetch a single Europe PMC record by external ID (PMID/PMCID/DOI).
+10. `pubmed_deduplicate`: Cross-source deduplication (PMID → DOI → PMCID → title+author+year); ambiguous matches to review list.
+11. `pubmed_citation_chase`: Citation-chase stub recording coverage notes; never invents citations.
+12. `pubmed_retraction_check`: Re-check PMIDs or a snapshot for retraction / erratum / correction notices; "verified no notice" vs "not yet checked".
 
 ### Resources
 - Target: `pubmed://record/{pmid}`, `pubmed://search/{search_id}`
@@ -330,6 +343,8 @@ uvx pubmed-access-mcp
 .venv/Scripts/python tests/test_export.py
 .venv/Scripts/python tests/test_audit.py
 .venv/Scripts/python tests/test_evidence.py
+.venv/Scripts/python tests/test_dedupe.py
+.venv/Scripts/python tests/test_retraction.py
 
 # Or via unittest discovery
 .venv/Scripts/python -m unittest discover tests
@@ -337,25 +352,29 @@ uvx pubmed-access-mcp
 
 ## 25. Last Verified
 - **Date:** 2026-10-17
-- **Git commit:** feature/phase3-evidence-tables (Phase 3 evidence tables)
-- **Tests:** 47 passed + 4 new Phase 3 tests, 0 failed (offline synthetic test suite across all 8 test modules)
-- **Build:** Built successfully (wheel and sdist for pubmed-access-mcp 0.3.0-dev)
+- **Git commit:** feature/phase4-europepmc-dedupe (Phase 4 Europe PMC, dedupe, citation chase, retraction monitoring)
+- **Tests:** 47 pre-existing + 4 Phase 3 + 6 new Phase 4 tests, 0 failed (offline synthetic test suite across all 10 test modules)
+- **Build:** Not yet built (pending Phase 4 commit)
 - **Lint:** Clean syntax
 - **Typecheck:** Clean execution
 - **Files Changed in Session:**
-  - `server.py` (NEW: pubmed_evidence_table tool + import evidence; reuses _resolve_export_records snapshot→fetch pattern)
-  - `evidence.py` (NEW: Phase 3 evidence table builder — build_evidence_row, build_evidence_table, evidence_table_to_csv; cell shape value/status/source_quote)
-  - `tests/test_evidence.py` (NEW: offline evidence table tests)
-  - `pyproject.toml` (added evidence module to py-modules)
-  - `ROADMAP.md` (Phase 2 marked DONE; Phase 3 marked CURRENT with full deliverables + columns)
-  - `DEVELOPMENT_STATE.md` (added evidence table layer, pubmed_evidence_table tool, new test file)
+  - `server.py` (NEW: europe_pmc_search, europe_pmc_get, pubmed_deduplicate, pubmed_citation_chase, pubmed_retraction_check tools; imports europe_pmc, dedupe, citations, retraction)
+  - `europe_pmc.py` (NEW: Phase 4 Europe PMC client + normalize_epmc_record; provenance-aware schema, source "Europe PMC")
+  - `dedupe.py` (NEW: Phase 4 cross-source deduplication on PMID → DOI → PMCID → title+author+year; ambiguous matches to review list)
+  - `citations.py` (NEW: Phase 4 citation-chase stub with coverage notes; never invents citations)
+  - `retraction.py` (NEW: Phase 4 retraction / correction monitoring helpers with checked_at audit trail)
+  - `tests/test_dedupe.py` (NEW: offline deduplication tests)
+  - `tests/test_retraction.py` (NEW: offline retraction monitoring tests)
+  - `pyproject.toml` (added europe_pmc, dedupe, citations, retraction to py-modules)
+  - `ROADMAP.md` (Phase 3 marked DONE; Phase 4 marked CURRENT with 4.1–4.4 deliverables)
+  - `DEVELOPMENT_STATE.md` (added Phase 4 tools to Target Tools + Target Tool Evolution, new modules + tests in structure)
 
 ## 26. EXACT NEXT TASK
-1. Commit Phase 3 changes on `feature/phase3-evidence-tables` and push to origin.
-2. Open a PR against `main` (or fast-forward merge if appropriate, following CLINE_MERGE_PHASE2.md local-merge fallback).
-3. (Optional) Finalize PyPI release for `pubmed-access-mcp` v0.3.0-dev.
-4. (Optional) Implement `pubmed_validate` tool per DEVELOPMENT_STATE.md next-task list.
+1. Commit Phase 4 changes on `feature/phase4-europepmc-dedupe` and push to origin.
+2. Fast-forward merge into `main` (feature branch → ff-merge → delete, following the Phase 3 merge pattern).
+3. Run the full offline test suite on `main` (all previous + new tests must pass).
+4. (Optional) Next: implement `pubmed_validate` tool per the remaining roadmap.
 
 ## 27. SESSION HANDOFF
 Next agent should:
-Review `DEVELOPMENT_STATE.md`, inspect Section 26, and proceed with commit/push of Phase 3 branch, then consider `pubmed_validate` tool implementation.
+Review `DEVELOPMENT_STATE.md` Section 26, verify the Phase 4 branch is merged to `main` with all tests green, then consider `pubmed_validate` tool implementation or Phase 4 scaffolding review.
