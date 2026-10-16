@@ -31,7 +31,7 @@ ALLOWED_STATUSES = {
     STATUS_NOT_APPLICABLE,
 }
 
-SERVER_VERSION = "0.3.0-dev"   # bump when Phase 1 lands
+SERVER_VERSION = "0.3.1"
 SCHEMA_VERSION = "1.1"        # provenance ledger schema
 
 

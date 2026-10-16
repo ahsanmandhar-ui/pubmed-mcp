@@ -4,7 +4,7 @@
 - **Name:** pubmed-access-mcp (Repository: ahsanmandhar-ui/pubmed-mcp)
 - **Repository:** https://github.com/ahsanmandhar-ui/pubmed-mcp
 - **Purpose:** Minimal, auditable, provenance-first Model Context Protocol (MCP) server for PubMed via NCBI E-utilities, specifically optimized for evidence synthesis, systematic reviews, and reproducible medical/scientific research.
-- **Current version:** 0.3.0-dev
+- **Current version:** 0.3.1
 - **Schema version:** 1.1
 
 ## 2. Product Thesis

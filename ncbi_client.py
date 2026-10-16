@@ -26,7 +26,7 @@ logger = logging.getLogger("pubmed-mcp.client")
 
 EUTILS_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 DEFAULT_TOOL_NAME = "pubmed-access-mcp"
-SERVER_VERSION = "0.3.0-dev"
+SERVER_VERSION = "0.3.1"
 SCHEMA_VERSION = "1.0"
 
 
@@ -255,6 +255,10 @@ class NcbiClient:
         params: Dict[str, Any] = {"db": db, "retmode": "json"}
         resp = self.request("einfo.fcgi", params, method="GET")
         try:
-            return resp.json().get("einforesult", {}).get("dbinfo", {})
+            data = resp.json().get("einforesult", {})
+            dbinfo = data.get("dbinfo", {})
+            if isinstance(dbinfo, list):
+                dbinfo = dbinfo[0] if dbinfo else {}
+            return dbinfo
         except Exception as e:
             raise ParseError(f"Failed to parse NCBI EInfo JSON response: {e}") from e

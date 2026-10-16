@@ -43,7 +43,7 @@ class TestNcbiClient(unittest.TestCase):
         self.assertEqual(prov["provider"], "NCBI PubMed")
         self.assertEqual(prov["database"], "pubmed")
         self.assertEqual(prov["utility"], "esearch")
-        self.assertEqual(prov["server_version"], "0.3.0-dev")
+        self.assertEqual(prov["server_version"], "0.3.1")
         self.assertEqual(prov["schema_version"], "1.0")
         self.assertIn("timestamp", prov)
         self.assertNotIn("api_key", prov["request_parameters"])
@@ -77,12 +77,12 @@ class TestTargetTools(unittest.TestCase):
                 }
             }
         }
-        with patch.object(s, "_request", return_value=mock_resp):
+        with patch.object(s.client, "einfo", return_value={"dbname": "pubmed", "menuname": "PubMed", "description": "PubMed bibliographic record", "count": "38000000", "lastupdate": "2026/10/05 02:00", "fieldlist": [{"name": "ALL", "fullname": "All Fields", "description": "All terms in record"}, {"name": "TITL", "fullname": "Title", "description": "Words in title"}]}):
             info = s.pubmed_database_info("pubmed")
             self.assertEqual(info["database"], "pubmed")
-            self.assertEqual(info["record_count"], 38000000)
-            self.assertEqual(info["field_count"], 2)
-            self.assertEqual(info["fields"][0]["name"], "ALL")
+            self.assertEqual(info["count"], "38000000")
+            self.assertEqual(len(info["fieldlist"]), 2)
+            self.assertEqual(info["fieldlist"][0]["name"], "ALL")
             self.assertEqual(info["provenance"]["utility"], "einfo")
             self.assertEqual(info["provenance"]["provider"], "NCBI PubMed")
 

@@ -71,9 +71,13 @@ class EuropePmcClient:
         Fetch a single record by external ID (usually PMID with source=MED).
         """
         self._throttle()
-        headers = {"User-Agent": f"pubmed-access-mcp/0.4 ({self.email})"}
+        # Europe PMC accepts: /MED/{id}/json  or search by EXT_ID
         url = f"{EPMC_BASE}/{source}/{ext_id}/json"
+        headers = {"User-Agent": f"pubmed-access-mcp/0.4 ({self.email})"}
         resp = requests.get(url, headers=headers, timeout=self.timeout)
+        if resp.status_code == 404:
+            # fallback to search
+            return self.search(f"EXT_ID:{ext_id} AND SRC:{source}", page_size=1)
         if resp.status_code != 200:
             raise EuropePmcError(f"Europe PMC get failed: HTTP {resp.status_code}")
         return resp.json()

@@ -53,7 +53,7 @@ class TestProvenanceField(unittest.TestCase):
         self.assertEqual(p["utility"], "efetch")
         self.assertEqual(p["response_hash"], {"algorithm": "sha256", "value": "abc"})
         self.assertEqual(p["schema_version"], "1.1")
-        self.assertEqual(p["server_version"], "0.3.0-dev")
+        self.assertEqual(p["server_version"], "0.3.1")
 
 
 if __name__ == "__main__":

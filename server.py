@@ -390,28 +390,25 @@ def download_pdfs(pmids: List[str], folder: Optional[str] = None) -> dict:
 # ----------------------------------------------------------------- target tools (evidence-synthesis & provenance-first)
 @mcp.tool()
 def pubmed_database_info(db: str = "pubmed") -> dict:
-    """Get metadata, last update date, record count, and search field tags for an NCBI database (default: 'pubmed').
-
-    Provides audit-grade database metadata and field definitions directly from NCBI EInfo.
-    """
-    clean_db = (db or "pubmed").strip().lower()
-    res = _request("einfo.fcgi", {"db": clean_db, "retmode": "json"}, method="GET")
-    data = res.json().get("einforesult", {}).get("dbinfo", {})
-    prov = client.build_provenance("einfo", {"db": clean_db}, database=clean_db)
-    fields = [
-        {"name": f.get("name"), "full_name": f.get("fullname"), "description": f.get("description")}
-        for f in data.get("fieldlist", [])
-    ]
-    return {
-        "database": data.get("dbname") or clean_db,
-        "menu_name": data.get("menuname") or MISSING,
-        "description": data.get("description") or MISSING,
-        "record_count": int(data.get("count", 0)),
-        "last_update": data.get("lastupdate") or MISSING,
-        "field_count": len(fields),
-        "fields": fields,
-        "provenance": prov,
-    }
+    """Query NCBI EInfo for database statistics and field tags."""
+    db = (db or "pubmed").strip().lower()
+    if not db:
+        db = "pubmed"
+    try:
+        info = client.einfo(db=db)
+        # einfo may return a list or a dict depending on response shape
+        if isinstance(info, list):
+            info = info[0] if info else {}
+        return {
+            "database": info.get("dbname") or db,
+            "description": info.get("description"),
+            "count": info.get("count"),
+            "lastupdate": info.get("lastupdate"),
+            "fieldlist": info.get("fieldlist") or info.get("fields") or [],
+            "provenance": client.build_provenance("einfo", {"db": db}),
+        }
+    except Exception as e:
+        return {"error": "ncbi_einfo_failed", "message": str(e), "database": db}
 
 
 @mcp.tool()
@@ -1007,24 +1004,34 @@ def europe_pmc_search(
 
 
 @mcp.tool()
-def europe_pmc_get(
-    ext_id: str,
-    source: str = "MED",
-) -> dict:
-    """Fetch a single Europe PMC record by external ID (usually PMID with source=MED).
-
-    Normalized into the same provenance schema used for PubMed. Source is "Europe PMC".
-    Never invents fields.
-    """
-    epmc_client = europe_pmc.EuropePmcClient()
-    raw = epmc_client.get_by_id(ext_id=ext_id, source=source)
-    record = europe_pmc.normalize_epmc_record(raw)
-    return {
-        "source": "Europe PMC",
-        "external_id": ext_id,
-        "source_type": source,
-        "record": record,
-    }
+def europe_pmc_get(ext_id: str, source: str = "MED") -> dict:
+    """Fetch a single record from Europe PMC by external ID (usually PMID with source=MED)."""
+    ext_id = (ext_id or "").strip()
+    source = (source or "MED").strip().upper()
+    if not ext_id:
+        raise ValueError("ext_id is required")
+    try:
+        epmc_client = europe_pmc.EuropePmcClient()
+        raw = epmc_client.get_by_id(ext_id, source=source)
+        # Some responses wrap the record; unwrap if needed
+        if isinstance(raw, dict) and "result" in raw:
+            raw = raw["result"]
+        if not raw:
+            return {"error": "not_found", "ext_id": ext_id, "source": source}
+        record = europe_pmc.normalize_epmc_record(raw)
+        return {
+            "source": "Europe PMC",
+            "external_id": ext_id,
+            "source_type": source,
+            "record": record,
+        }
+    except Exception as e:
+        return {
+            "error": "europe_pmc_get_failed",
+            "message": str(e),
+            "ext_id": ext_id,
+            "source": source,
+        }
 
 
 @mcp.tool()
