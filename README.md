@@ -5,7 +5,7 @@
 <h1 align="center">pubmed-mcp</h1>
 
 <p align="center">
-  <strong>Minimal MCP server for PubMed</strong><br/>
+  <strong>Research Guidelines Adjusted</strong><br/>
   Returns exactly what NCBI returns. Missing fields are flagged, never filled in.<br/>
   Built for evidence synthesis and systematic reviews.
 </p>
