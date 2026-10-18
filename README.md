@@ -358,3 +358,4 @@ All 68 tests pass with `false_inference_count == 0`.
 ## License
 
 Apache License 2.0 — see `LICENSE`. Copyright © ahsanmandhar-ui.
+[![M8ven Score](https://m8ven.ai/badge/mcp/ahsanmandhar-ui/pubmed-mcp)](https://m8ven.ai/mcp/ahsanmandhar-ui/pubmed-mcp?s=readme)
