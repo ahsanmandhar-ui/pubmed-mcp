@@ -23,7 +23,7 @@
 ## Why this exists
 
 Most PubMed wrappers either invent missing metadata or bury the original NCBI response. This one does neither. Every field comes from the source. If PubMed left something out, you see it. That makes the output usable in PRISMA workflows and audit trails.
-
+First Pubmed MCP from Med Student in Pakistan from SZMC RYK
 ---
 
 ## Architecture
